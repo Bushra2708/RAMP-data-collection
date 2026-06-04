@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 
 const AppContext = createContext();
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
 export const AppProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('rbhms_token') || '');
