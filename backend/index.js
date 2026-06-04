@@ -63,12 +63,6 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://ramp-data-collection.vercel.app'
 ];
-
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://ramp-data-collection.vercel.app'
-];
-
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -81,11 +75,8 @@ app.use(
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
