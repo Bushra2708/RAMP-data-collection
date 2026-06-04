@@ -35,6 +35,17 @@ export default function Login() {
   const [enteredOTP, setEnteredOTP] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
+  React.useEffect(() => {
+    if (showResetModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showResetModal]);
+
 
   // Districts fallback if masterData not loaded yet
   const districtsList = masterData.districts && masterData.districts.length > 0
@@ -225,7 +236,7 @@ export default function Login() {
       <div className="w-full max-w-4xl grid md:grid-cols-12 rounded-2xl overflow-hidden glass-panel glow-teal shadow-2xl animate-fade-in relative z-10">
         
         {/* Left Graphics Panel */}
-        <div className="md:col-span-5 bg-gradient-to-br from-teal-900/40 to-slate-900 p-8 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/5">
+        <div className="hidden md:flex md:col-span-5 bg-gradient-to-br from-teal-900/40 to-slate-900 p-8 flex flex-col justify-between border-r border-white/5">
           <div>
             <div className="inline-flex items-center justify-center p-3 rounded-xl bg-teal-500/10 text-teal-400 mb-6">
               <Shield className="w-8 h-8" />
@@ -244,7 +255,7 @@ export default function Login() {
         </div>
 
         {/* Right Input Form Panel */}
-        <div className="md:col-span-7 bg-slate-900 p-8 flex flex-col justify-center">
+        <div className="col-span-12 md:col-span-7 bg-slate-900 p-8 flex flex-col justify-center">
           {/* Tab Headers */}
           {!isRegisteringCounsellor && !isRegisteringAdmin && (
             <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-lg mb-8">
@@ -541,7 +552,7 @@ export default function Login() {
 
       {/* Simulated OTP Password Reset Modal */}
       {showResetModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-2xl p-6 relative">
             <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
               <KeyRound className="w-5 h-5 text-teal-400" /> OTP Password Reset

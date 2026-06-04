@@ -3,11 +3,10 @@ import sequelize from '../config/db.js';
 import Counsellor from './Counsellor.js';
 
 const Beneficiary = sequelize.define('Beneficiary', {
-  _id: {
+  id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
-    field: 'id',
   },
   beneficiaryId: {
     type: DataTypes.STRING,
@@ -64,6 +63,14 @@ const Beneficiary = sequelize.define('Beneficiary', {
   },
 }, {
   freezeTableName: true,
+  indexes: [
+    { fields: ['assignedCounsellorId'] },
+    { fields: ['beneficiaryId'] },
+    { fields: ['createdAt'] },
+    { using: 'gin', fields: ['personalInfo'] },
+    { using: 'gin', fields: ['entrepreneurProfile'] },
+    { using: 'gin', fields: ['esdpTraining'] },
+  ],
   hooks: {
     beforeCreate: async (beneficiary) => {
       if (!beneficiary.beneficiaryId) {

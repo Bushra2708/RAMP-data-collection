@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 // Load environmental variables
 dotenv.config();
@@ -16,6 +18,8 @@ import './models/MasterData.js';
 import './models/Beneficiary.js';
 import './models/Activity.js';
 import './models/BeneficiaryDocument.js';
+import './models/AuditLog.js';
+import { initBackupScheduler } from './config/backupWorker.js';
 
 // Connect to Database and Bootstrap tables/seeding
 connectDB().then(async () => {
@@ -29,6 +33,9 @@ connectDB().then(async () => {
     const { seedInitialMasterData } = await import('./controllers/masterDataController.js');
     await seedInitialUsers();
     await seedInitialMasterData();
+
+    // Start weekly backup scheduler
+    initBackupScheduler();
   } catch (err) {
     console.error('Error during database bootstrap:', err.message);
   }
@@ -36,8 +43,28 @@ connectDB().then(async () => {
 
 const app = express();
 
-// Global Middlewares
-app.use(cors());
+// Security Hardening Middlewares
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', limiter);
+
+// Strict CORS Configuration
+app.use(cors({
+  origin: process.env.CLIENT_URL || '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -50,6 +77,8 @@ import beneficiaryRoutes from './routes/beneficiaryRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
+import auditRoutes from './routes/auditRoutes.js';
+import backupRoutes from './routes/backupRoutes.js';
 
 // Route Handlers
 app.use('/api/auth', authRoutes);
@@ -57,6 +86,8 @@ app.use('/api/beneficiary', beneficiaryRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/master-data', masterDataRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/backup', backupRoutes);
 
 // Root Status check
 app.get('/api/status', (req, res) => {

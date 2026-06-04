@@ -4,11 +4,10 @@ import Beneficiary from './Beneficiary.js';
 import Counsellor from './Counsellor.js';
 
 const Activity = sequelize.define('Activity', {
-  _id: {
+  id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
-    field: 'id',
   },
   beneficiary: {
     type: DataTypes.UUID,
@@ -56,6 +55,12 @@ const Activity = sequelize.define('Activity', {
   },
 }, {
   freezeTableName: true,
+  indexes: [
+    { fields: ['beneficiary_id'] },
+    { fields: ['counsellor_id'] },
+    { fields: ['supportCategory'] },
+    { fields: ['activityDate'] },
+  ],
 });
 
 // Relationships

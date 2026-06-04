@@ -4,9 +4,10 @@ import Beneficiary from '../models/Beneficiary.js';
 import Counsellor from '../models/Counsellor.js';
 import Activity from '../models/Activity.js';
 import BeneficiaryDocument from '../models/BeneficiaryDocument.js';
-import { useCloudinary } from '../middleware/upload.js';
+import { storageType, deleteFile } from '../middleware/upload.js';
 import fs from 'fs';
 import path from 'path';
+import { logAudit } from '../middleware/auditLogger.js';
 
 // @desc    Register a new beneficiary
 // @route   POST /api/beneficiary
@@ -19,16 +20,18 @@ export const registerBeneficiary = async (req, res) => {
   }
 
   try {
-    // 1. Check duplicate Mobile Number
+    // 1. Check duplicate Mobile Number (using JSONB extraction)
     const duplicateMobile = await Beneficiary.findOne({
-      where: { 'personalInfo.mobileNumber': personalInfo.mobileNumber }
+      where: sequelize.literal(
+        `"Beneficiary"."personalInfo"->>'mobileNumber' = ${sequelize.escape(personalInfo.mobileNumber)}`
+      )
     });
     if (duplicateMobile) {
       return res.status(400).json({
         success: false,
         message: `A beneficiary with mobile number ${personalInfo.mobileNumber} is already registered.`,
         duplicateField: 'mobileNumber',
-        existingId: duplicateMobile._id,
+        existingId: duplicateMobile.id,
         existingBeneficiaryId: duplicateMobile.beneficiaryId,
       });
     }
@@ -36,14 +39,16 @@ export const registerBeneficiary = async (req, res) => {
     // 2. Check duplicate Aadhaar Number (if provided)
     if (personalInfo.aadhaarNumber && personalInfo.aadhaarNumber.trim() !== '') {
       const duplicateAadhaar = await Beneficiary.findOne({
-        where: { 'personalInfo.aadhaarNumber': personalInfo.aadhaarNumber }
+        where: sequelize.literal(
+          `"Beneficiary"."personalInfo"->>'aadhaarNumber' = ${sequelize.escape(personalInfo.aadhaarNumber)}`
+        )
       });
       if (duplicateAadhaar) {
         return res.status(400).json({
           success: false,
           message: `A beneficiary with Aadhaar number ${personalInfo.aadhaarNumber} is already registered.`,
           duplicateField: 'aadhaarNumber',
-          existingId: duplicateAadhaar._id,
+          existingId: duplicateAadhaar.id,
           existingBeneficiaryId: duplicateAadhaar.beneficiaryId,
         });
       }
@@ -58,10 +63,22 @@ export const registerBeneficiary = async (req, res) => {
 
     // Assign Counsellor if registered by a Counsellor
     if (req.role === 'Counsellor') {
-      beneficiaryData.assignedCounsellorId = req.user._id;
+      beneficiaryData.assignedCounsellorId = req.user.id;
     }
 
     const beneficiary = await Beneficiary.create(beneficiaryData);
+
+    await logAudit({
+      req,
+      action: 'CREATE_BENEFICIARY',
+      entity: 'Beneficiary',
+      entityId: beneficiary.id,
+      details: {
+        beneficiaryId: beneficiary.beneficiaryId,
+        fullName: personalInfo.fullName,
+        mobileNumber: personalInfo.mobileNumber
+      }
+    });
 
     res.status(201).json({
       success: true,
@@ -73,8 +90,8 @@ export const registerBeneficiary = async (req, res) => {
   }
 };
 
-// @desc    Get all beneficiaries with advanced search & filters
-// @route   GET /api/beneficiary
+// @desc    Get all beneficiaries with advanced search, filters & pagination
+// @route   GET /api/beneficiary?page=1&limit=20&search=...
 // @access  Private
 export const getBeneficiaries = async (req, res) => {
   try {
@@ -82,10 +99,19 @@ export const getBeneficiaries = async (req, res) => {
 
     // Enforce counsellor scoping (Counsellors only view assigned beneficiaries)
     if (req.role === 'Counsellor') {
-      where.assignedCounsellorId = req.user._id;
+      where.assignedCounsellorId = req.user.id;
     }
 
-    const { search, district, village, shgName, enterpriseName, registrationStatus, loanStatus, marketAccessStatus, counsellorId } = req.query;
+    const {
+      search, district, village, shgName, enterpriseName,
+      registrationStatus, loanStatus, marketAccessStatus, counsellorId,
+      page = 1, limit = 20,
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const offset = (pageNum - 1) * limitNum;
+
     const andConditions = [];
 
     if (search) {
@@ -99,7 +125,9 @@ export const getBeneficiaries = async (req, res) => {
     }
 
     if (district) {
-      andConditions.push({ 'personalInfo.district': district });
+      andConditions.push(
+        sequelize.literal(`"Beneficiary"."personalInfo"->>'district' = ${sequelize.escape(district)}`)
+      );
     }
     if (village) {
       andConditions.push(
@@ -116,8 +144,8 @@ export const getBeneficiaries = async (req, res) => {
         sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'enterpriseName' ILIKE ${sequelize.escape(`%${enterpriseName}%`)}`)
       );
     }
-    
-    // Scoping by assigned counsellor (Admin can filter by counsellor)
+
+    // Admin can filter by specific counsellor
     if (req.role === 'Admin' && counsellorId) {
       where.assignedCounsellorId = counsellorId;
     }
@@ -126,47 +154,45 @@ export const getBeneficiaries = async (req, res) => {
     if (registrationStatus) {
       if (registrationStatus === 'Udyam Registered') {
         const udyamActivities = await Activity.findAll({
-          attributes: ['beneficiary'],
-          where: {
-            supportCategory: 'Udyam Registration',
-            status: 'Completed'
-          },
-          raw: true
+          attributes: ['beneficiary_id'],
+          where: { supportCategory: 'Udyam Registration', status: 'Completed' },
+          raw: true,
         });
-        const udyamBeneficiaryIds = udyamActivities.map(a => a.beneficiary);
-        where._id = { [Op.in]: udyamBeneficiaryIds };
+        const udyamBeneficiaryIds = udyamActivities.map(a => a.beneficiary_id);
+        where.id = { [Op.in]: udyamBeneficiaryIds.length > 0 ? udyamBeneficiaryIds : ['00000000-0000-0000-0000-000000000000'] };
       }
       if (registrationStatus === 'GST Registered') {
-        andConditions.push({
-          'compliance.gstNumber': {
-            [Op.and]: [
-              { [Op.ne]: null },
-              { [Op.ne]: '' }
-            ]
-          }
-        });
+        andConditions.push(
+          sequelize.literal(`"Beneficiary"."compliance"->>'gstNumber' IS NOT NULL AND "Beneficiary"."compliance"->>'gstNumber' != ''`)
+        );
       }
     }
 
     // Loan Status filters
     if (loanStatus) {
       if (loanStatus === 'Applied') {
-        andConditions.push({ 'loanTracking.loanApplied': 'Yes' });
+        andConditions.push(
+          sequelize.literal(`"Beneficiary"."loanTracking"->>'loanApplied' = 'Yes'`)
+        );
       }
       if (loanStatus === 'Sanctioned') {
         andConditions.push(
-          sequelize.literal(`CAST("Beneficiary"."loanTracking"->>'loanAmountSanctioned' AS NUMERIC) > 0`)
+          sequelize.literal(`CAST(NULLIF("Beneficiary"."loanTracking"->>'loanAmountSanctioned', '') AS NUMERIC) > 0`)
         );
       }
     }
 
-    // Market Access Status filters
+    // Market Access filters
     if (marketAccessStatus) {
       if (marketAccessStatus === 'ONDC') {
-        andConditions.push({ 'marketAccess.ondcRegistered': 'Yes' });
+        andConditions.push(
+          sequelize.literal(`"Beneficiary"."marketAccess"->>'ondcRegistered' = 'Yes'`)
+        );
       }
       if (marketAccessStatus === 'GeM') {
-        andConditions.push({ 'marketAccess.gemRegistered': 'Yes' });
+        andConditions.push(
+          sequelize.literal(`"Beneficiary"."marketAccess"->>'gemRegistered' = 'Yes'`)
+        );
       }
     }
 
@@ -174,17 +200,26 @@ export const getBeneficiaries = async (req, res) => {
       where[Op.and] = andConditions;
     }
 
-    const list = await Beneficiary.findAll({
+    const { count, rows } = await Beneficiary.findAndCountAll({
       where,
       include: [{
         model: Counsellor,
         as: 'assignedCounsellor',
-        attributes: ['fullName', 'mobileNumber', 'district']
+        attributes: ['fullName', 'mobileNumber', 'district'],
       }],
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
+      limit: limitNum,
+      offset,
     });
 
-    res.json({ success: true, count: list.length, beneficiaries: list });
+    res.json({
+      success: true,
+      total: count,
+      page: pageNum,
+      totalPages: Math.ceil(count / limitNum),
+      count: rows.length,
+      beneficiaries: rows,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -199,7 +234,7 @@ export const getBeneficiaryById = async (req, res) => {
       include: [{
         model: Counsellor,
         as: 'assignedCounsellor',
-        attributes: ['fullName', 'mobileNumber', 'district']
+        attributes: ['fullName', 'mobileNumber', 'district'],
       }]
     });
 
@@ -207,20 +242,19 @@ export const getBeneficiaryById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Beneficiary not found.' });
     }
 
-    // Auth validation
-    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user._id)) {
+    // Auth validation — counsellors can only see their own beneficiaries
+    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
       return res.status(403).json({ success: false, message: 'Not authorized to view this profile.' });
     }
 
-    // Fetch related data from separate tables
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['activityDate', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['createdAt', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['createdAt', 'DESC']],
       }),
     ]);
 
@@ -244,25 +278,17 @@ export const updateBeneficiary = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Beneficiary not found.' });
     }
 
-    // Auth validation
-    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user._id)) {
+    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
       return res.status(403).json({ success: false, message: 'Not authorized to update this profile.' });
     }
 
     const {
-      personalInfo,
-      esdpTraining,
-      entrepreneurProfile,
-      dprTracking,
-      loanTracking,
-      compliance,
-      marketAccess,
-      certifications,
+      personalInfo, esdpTraining, entrepreneurProfile,
+      dprTracking, loanTracking, compliance, marketAccess, certifications,
     } = req.body;
 
     const timelineEvents = [];
 
-    // Check updates and append appropriate milestones to timeline
     if (esdpTraining && esdpTraining.trainingCompleted !== beneficiary.esdpTraining?.trainingCompleted) {
       if (esdpTraining.trainingCompleted === 'Yes') {
         timelineEvents.push({
@@ -305,7 +331,6 @@ export const updateBeneficiary = async (req, res) => {
       });
     }
 
-    // Apply updates and mark modified for JSONB fields
     if (personalInfo) {
       beneficiary.personalInfo = { ...beneficiary.personalInfo, ...personalInfo };
       beneficiary.changed('personalInfo', true);
@@ -339,7 +364,6 @@ export const updateBeneficiary = async (req, res) => {
       beneficiary.changed('certifications', true);
     }
 
-    // Append timeline milestones
     if (timelineEvents.length > 0) {
       beneficiary.timeline = [...(beneficiary.timeline || []), ...timelineEvents];
       beneficiary.changed('timeline', true);
@@ -347,15 +371,25 @@ export const updateBeneficiary = async (req, res) => {
 
     await beneficiary.save();
 
-    // Re-fetch with populated activities and documents for full response
+    await logAudit({
+      req,
+      action: 'UPDATE_BENEFICIARY',
+      entity: 'Beneficiary',
+      entityId: beneficiary.id,
+      details: {
+        beneficiaryId: beneficiary.beneficiaryId,
+        updatedFields: Object.keys(req.body)
+      }
+    });
+
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['activityDate', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['createdAt', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['createdAt', 'DESC']],
       }),
     ]);
 
@@ -385,17 +419,15 @@ export const addActivity = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Beneficiary not found.' });
     }
 
-    // Auth validation
-    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user._id)) {
+    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
       return res.status(403).json({ success: false, message: 'Not authorized.' });
     }
 
-    // Insert into Activity table
     await Activity.create({
-      beneficiary: req.params.id,
+      beneficiary_id: req.params.id,
       activityDate: activityDate || new Date(),
       counsellorName: req.user.fullName,
-      counsellorId: req.user._id,
+      counsellorId: req.user.id,
       supportCategory,
       description,
       status: status || 'Not Started',
@@ -424,15 +456,25 @@ export const addActivity = async (req, res) => {
     beneficiary.changed('timeline', true);
     await beneficiary.save();
 
-    // Return full profile
+    await logAudit({
+      req,
+      action: 'ADD_ACTIVITY',
+      entity: 'Activity',
+      details: {
+        beneficiaryId: req.params.id,
+        supportCategory,
+        status
+      }
+    });
+
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['activityDate', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['createdAt', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['createdAt', 'DESC']],
       }),
     ]);
 
@@ -456,8 +498,8 @@ export const uploadDocument = async (req, res) => {
 
   const { category, documentName } = req.body;
   if (!category || !documentName) {
-    if (!useCloudinary && req.file.path) {
-      fs.unlinkSync(req.file.path);
+    if (storageType === 'local' && req.file.path) {
+      try { fs.unlinkSync(req.file.path); } catch(e) {}
     }
     return res.status(400).json({ success: false, message: 'Category and documentName are required.' });
   }
@@ -465,19 +507,22 @@ export const uploadDocument = async (req, res) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
-      if (!useCloudinary && req.file.path) fs.unlinkSync(req.file.path);
+      if (storageType === 'local' && req.file.path) try { fs.unlinkSync(req.file.path); } catch(e) {}
       return res.status(404).json({ success: false, message: 'Beneficiary not found.' });
     }
 
-    // Auth validation
-    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user._id)) {
-      if (!useCloudinary && req.file.path) fs.unlinkSync(req.file.path);
+    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
+      if (storageType === 'local' && req.file.path) try { fs.unlinkSync(req.file.path); } catch(e) {}
       return res.status(403).json({ success: false, message: 'Not authorized.' });
     }
 
     let docPath, publicId, format;
 
-    if (useCloudinary) {
+    if (storageType === 's3') {
+      docPath = req.file.location;
+      publicId = req.file.key;
+      format = path.extname(req.file.originalname).substring(1).toUpperCase() || 'FILE';
+    } else if (storageType === 'cloudinary') {
       docPath = req.file.path;
       publicId = req.file.filename;
       format = path.extname(req.file.originalname).substring(1).toUpperCase() || 'FILE';
@@ -488,14 +533,28 @@ export const uploadDocument = async (req, res) => {
     }
 
     const documentEntry = await BeneficiaryDocument.create({
-      beneficiary: req.params.id,
+      beneficiary_id: req.params.id,
       category,
       name: documentName,
       path: docPath,
       publicId,
       format,
-      uploadedBy: req.user._id,
+      uploadedBy: req.user.id,
       uploadedByRole: req.role,
+    });
+
+    await logAudit({
+      req,
+      action: 'UPLOAD_DOCUMENT',
+      entity: 'BeneficiaryDocument',
+      entityId: documentEntry.id,
+      details: {
+        beneficiaryId: req.params.id,
+        category,
+        documentName,
+        format,
+        path: docPath
+      }
     });
 
     const { fileSlot } = req.body;
@@ -520,12 +579,12 @@ export const uploadDocument = async (req, res) => {
 
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['activityDate', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['createdAt', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['createdAt', 'DESC']],
       }),
     ]);
 
@@ -535,7 +594,7 @@ export const uploadDocument = async (req, res) => {
 
     res.json({ success: true, message: 'Document uploaded and linked to profile.', beneficiary: fullProfile, document: documentEntry });
   } catch (err) {
-    if (!useCloudinary && req.file && req.file.path) {
+    if (storageType === 'local' && req.file && req.file.path) {
       try { fs.unlinkSync(req.file.path); } catch(e) {}
     }
     res.status(500).json({ success: false, message: err.message });
@@ -553,29 +612,26 @@ export const deleteDocument = async (req, res) => {
     }
 
     const doc = await BeneficiaryDocument.findOne({
-      where: { _id: req.params.docId, beneficiary: req.params.id }
+      where: { id: req.params.docId, beneficiary_id: req.params.id }
     });
     if (!doc) {
       return res.status(404).json({ success: false, message: 'Document entry not found in profile.' });
     }
 
-    // Delete file from storage
-    if (useCloudinary && doc.publicId) {
-      try {
-        const cloudinary = (await import('../config/cloudinary.js')).default;
-        await cloudinary.uploader.destroy(doc.publicId);
-      } catch (e) {
-        console.error('Cloudinary delete error:', e.message);
-      }
-    } else if (!useCloudinary && doc.path) {
-      const localFilePath = path.join(process.cwd(), doc.path);
-      if (fs.existsSync(localFilePath)) {
-        fs.unlinkSync(localFilePath);
-      }
-    }
+    await deleteFile(doc.publicId, doc.path);
 
-    await BeneficiaryDocument.destroy({
-      where: { _id: doc._id }
+    await BeneficiaryDocument.destroy({ where: { id: doc.id } });
+
+    await logAudit({
+      req,
+      action: 'DELETE_DOCUMENT',
+      entity: 'BeneficiaryDocument',
+      entityId: doc.id,
+      details: {
+        beneficiaryId: req.params.id,
+        documentName: doc.name,
+        category: doc.category
+      }
     });
 
     const updatedTimeline = [...(beneficiary.timeline || [])];
@@ -587,17 +643,16 @@ export const deleteDocument = async (req, res) => {
     });
     beneficiary.timeline = updatedTimeline;
     beneficiary.changed('timeline', true);
-
     await beneficiary.save();
 
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['activityDate', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary: req.params.id },
-        order: [['createdAt', 'DESC']]
+        where: { beneficiary_id: req.params.id },
+        order: [['createdAt', 'DESC']],
       }),
     ]);
 

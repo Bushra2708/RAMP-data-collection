@@ -1,9 +1,10 @@
 import { Op } from 'sequelize';
+import sequelize from '../config/db.js';
 import Beneficiary from '../models/Beneficiary.js';
 import Activity from '../models/Activity.js';
 import Counsellor from '../models/Counsellor.js';
 
-// @desc    Get dashboard summary statistics & district distribution
+// @desc    Get dashboard summary statistics & chart data
 // @route   GET /api/analytics/dashboard
 // @access  Private/Admin
 export const getDashboardStats = async (req, res) => {
@@ -13,73 +14,68 @@ export const getDashboardStats = async (req, res) => {
 
     // ESDP completed count
     const totalEsdp = await Beneficiary.count({
-      where: { 'esdpTraining.trainingCompleted': 'Yes' }
+      where: sequelize.literal(`"Beneficiary"."esdpTraining"->>'trainingCompleted' = 'Yes'`)
     });
 
     // Existing Entrepreneurs count
     const existingEntrepreneurs = await Beneficiary.count({
-      where: { 'entrepreneurProfile.existingEntrepreneur': 'Yes' }
+      where: sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'existingEntrepreneur' = 'Yes'`)
     });
 
     // New Entrepreneurs count
     const newEntrepreneurs = await Beneficiary.count({
-      where: {
-        'entrepreneurProfile.existingEntrepreneur': 'No',
-        'entrepreneurProfile.interestedInNewBusiness': 'Yes'
-      }
+      where: sequelize.literal(
+        `"Beneficiary"."entrepreneurProfile"->>'existingEntrepreneur' = 'No' AND "Beneficiary"."entrepreneurProfile"->>'interestedInNewBusiness' = 'Yes'`
+      )
     });
-    
-    // Use Activity table for Udyam count
+
+    // Udyam count via Activity table
     const udyamActivities = await Activity.findAll({
-      attributes: ['beneficiary'],
+      attributes: ['beneficiary_id'],
       where: {
         supportCategory: 'Udyam Registration',
         status: 'Completed',
       },
-      group: ['beneficiary'],
-      raw: true
+      group: ['beneficiary_id'],
+      raw: true,
     });
     const udyamCount = udyamActivities.length;
 
     // ONDC count
     const ondcCount = await Beneficiary.count({
-      where: { 'marketAccess.ondcRegistered': 'Yes' }
+      where: sequelize.literal(`"Beneficiary"."marketAccess"->>'ondcRegistered' = 'Yes'`)
     });
 
     // GeM count
     const gemCount = await Beneficiary.count({
-      where: { 'marketAccess.gemRegistered': 'Yes' }
+      where: sequelize.literal(`"Beneficiary"."marketAccess"->>'gemRegistered' = 'Yes'`)
     });
 
     // Loans Facilitated (loanAmountSanctioned > 0)
-    // Wait, in JSONB:
     const loansFacilitated = await Beneficiary.count({
-      where: {
-        [Op.and]: [
-          { 'loanTracking.loanApplied': 'Yes' },
-          Op.literal(`CAST("Beneficiary"."loanTracking"->>'loanAmountSanctioned' AS NUMERIC) > 0`)
-        ]
-      }
+      where: sequelize.literal(
+        `"Beneficiary"."loanTracking"->>'loanApplied' = 'Yes' AND CAST(NULLIF("Beneficiary"."loanTracking"->>'loanAmountSanctioned', '') AS NUMERIC) > 0`
+      )
     });
-    
-    // Enterprises Established: Status Active or Udyam completed
+
+    // Active Enterprises
     const activeEnterprises = await Beneficiary.count({
-      where: { 'entrepreneurProfile.businessStatus': 'Active' }
+      where: sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'businessStatus' = 'Active'`)
     });
     const enterprisesEstablished = Math.max(activeEnterprises, udyamCount);
 
-    // 2. Fetch all beneficiaries for JS aggregation (efficient and dialect-independent for charts)
+    // 2. Fetch all beneficiaries for JS-side chart aggregation
     const list = await Beneficiary.findAll({ raw: true });
 
     // A. District-Wise Distribution
     const districtGroups = {};
     list.forEach((b) => {
-      const dist = b.personalInfo?.district || 'Unspecified';
+      const dist = b['personalInfo']?.district || b.personalInfo?.district || 'Unspecified';
       if (!districtGroups[dist]) {
         districtGroups[dist] = { beneficiaries: 0, entrepreneurs: 0, loansCount: 0, totalLoans: 0 };
       }
       districtGroups[dist].beneficiaries += 1;
-      if (b.entrepreneurProfile?.existingEntrepreneur === 'Yes') {
+      if (b.personalInfo?.existingEntrepreneur === 'Yes' || b.entrepreneurProfile?.existingEntrepreneur === 'Yes') {
         districtGroups[dist].entrepreneurs += 1;
       }
       const loanAmt = Number(b.loanTracking?.loanAmountSanctioned) || 0;
@@ -96,7 +92,7 @@ export const getDashboardStats = async (req, res) => {
       totalLoans: districtGroups[dist].totalLoans,
     })).sort((a, b) => b.beneficiaries - a.beneficiaries);
 
-    // B. Sector Distribution (Pie Chart data)
+    // B. Sector Distribution (Pie Chart)
     const sectorGroups = {};
     list.forEach((b) => {
       const sector = b.entrepreneurProfile?.enterpriseSector;
@@ -113,11 +109,11 @@ export const getDashboardStats = async (req, res) => {
     const monthlyTrend = [];
     const dateLimit = new Date();
     dateLimit.setMonth(dateLimit.getMonth() - 5);
-    dateLimit.setDate(1); // Start from beginning of month 6 months ago
+    dateLimit.setDate(1);
 
     const trendGroups = {};
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
+
     list.forEach((b) => {
       const date = new Date(b.createdAt);
       if (date >= dateLimit) {
@@ -144,6 +140,14 @@ export const getDashboardStats = async (req, res) => {
         });
       });
 
+    // D. Counsellor-wise beneficiary count
+    const counsellors = await Counsellor.findAll({ attributes: ['id', 'fullName', 'district'] });
+    const counsellorStats = [];
+    for (const c of counsellors) {
+      const count = await Beneficiary.count({ where: { assignedCounsellorId: c.id } });
+      counsellorStats.push({ counsellor: c.fullName, district: c.district, count });
+    }
+
     res.json({
       success: true,
       summary: {
@@ -160,8 +164,10 @@ export const getDashboardStats = async (req, res) => {
       districtStats,
       sectorStats,
       monthlyTrend,
+      counsellorStats,
     });
   } catch (err) {
+    console.error('Analytics error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };

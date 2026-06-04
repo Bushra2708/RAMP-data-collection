@@ -3,11 +3,10 @@ import sequelize from '../config/db.js';
 import Beneficiary from './Beneficiary.js';
 
 const BeneficiaryDocument = sequelize.define('BeneficiaryDocument', {
-  _id: {
+  id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
-    field: 'id',
   },
   beneficiary: {
     type: DataTypes.UUID,
@@ -55,6 +54,9 @@ const BeneficiaryDocument = sequelize.define('BeneficiaryDocument', {
   },
 }, {
   freezeTableName: true,
+  indexes: [
+    { fields: ['beneficiary_id'] },
+  ],
 });
 
 // Relationships

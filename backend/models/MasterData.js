@@ -2,11 +2,10 @@ import { DataTypes } from 'sequelize';
 import sequelize from '../config/db.js';
 
 const MasterData = sequelize.define('MasterData', {
-  _id: {
+  id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
-    field: 'id',
   },
   category: {
     type: DataTypes.STRING,

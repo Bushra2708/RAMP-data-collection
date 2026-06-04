@@ -200,6 +200,13 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
   };
 
   useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  useEffect(() => {
     fetchDetails();
   }, [id]);
 
@@ -312,7 +319,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
 
   if (loading && !beneficiary) {
     return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
         <div className="bg-slate-900 border border-white/10 w-full max-w-lg rounded-2xl p-6 flex flex-col items-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500 mb-2"></div>
           <span className="text-xs text-slate-400">Loading Beneficiary Profile...</span>
@@ -334,8 +341,14 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
   const inactiveTabClass = 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5';
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-900 border border-white/10 w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[95vh] animate-fade-in">
+    <div 
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-slate-900 border border-white/10 w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[95vh] animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header Section */}
         <div className="p-5 border-b border-white/5 bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -359,7 +372,12 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                 Edit Profile Details
               </button>
             )}
-            <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 cursor-pointer">
+            <button 
+              onClick={onClose} 
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 cursor-pointer flex items-center gap-1 border border-white/15 px-2 bg-slate-950/40"
+              title="Close Panel"
+            >
+              <span className="text-xs font-semibold">Close</span>
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -1290,7 +1308,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Passport Size Photo"
                     slotKey="passportPhoto"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1299,7 +1317,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Signature"
                     slotKey="signature"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1308,7 +1326,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Education Certificate"
                     slotKey="educationCertificate"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1317,7 +1335,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Aadhar Card File"
                     slotKey="aadharCard"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1326,7 +1344,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="PAN Card File"
                     slotKey="panCard"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1335,7 +1353,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Front page of Pass book"
                     slotKey="passbookFrontPage"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1344,7 +1362,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Cancelled Cheque"
                     slotKey="cancelledCheque"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1482,7 +1500,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Business Registration Cert"
                     slotKey="businessRegistration"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1491,7 +1509,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Business Address Proof"
                     slotKey="businessAddressProof"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1500,7 +1518,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Photos of the Unit"
                     slotKey="unitPhotos"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1509,7 +1527,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <FileSlotUpload
                     label="Udyam Certificate / DPIIT"
                     slotKey="udyamCertificate"
-                    beneficiaryId={beneficiary._id}
+                    beneficiaryId={beneficiary.id}
                     files={beneficiary.files}
                     API_BASE={API_BASE}
                     getHeaders={getHeaders}
@@ -1727,7 +1745,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
               {/* Documents grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {beneficiary.documents?.map((d) => (
-                  <div key={d._id} className="p-4 bg-slate-950/30 border border-white/5 rounded-xl flex items-center justify-between gap-3 hover:border-white/10 transition-colors">
+                  <div key={d.id} className="p-4 bg-slate-950/30 border border-white/5 rounded-xl flex items-center justify-between gap-3 hover:border-white/10 transition-colors">
                     <div className="overflow-hidden">
                       <span className="text-[10px] text-slate-500 block uppercase tracking-widest">{d.category}</span>
                       <span className="text-xs font-semibold text-white truncate block mt-0.5">{d.name}</span>
@@ -1745,7 +1763,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                       </a>
                       {user.role === 'Admin' && (
                         <button
-                          onClick={() => handleDeleteDoc(d._id)}
+                          onClick={() => handleDeleteDoc(d.id)}
                           className="p-1.5 bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white rounded transition-colors cursor-pointer"
                           title="Delete (Admin Only)"
                         >

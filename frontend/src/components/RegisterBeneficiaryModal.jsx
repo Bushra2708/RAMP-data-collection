@@ -30,6 +30,13 @@ export default function RegisterBeneficiaryModal({ onClose, onSuccess }) {
     panNumber: '',
   });
 
+  React.useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   const handleRegister = async (e) => {
     e.preventDefault();
     
@@ -54,7 +61,7 @@ export default function RegisterBeneficiaryModal({ onClose, onSuccess }) {
       if (data.success) {
         toast.success('Beneficiary registered successfully! Now please complete the details form.');
         if (onSuccess) {
-          onSuccess(data.beneficiary._id);
+          onSuccess(data.beneficiary.id);
         } else {
           onClose();
         }
@@ -74,8 +81,14 @@ export default function RegisterBeneficiaryModal({ onClose, onSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-900 border border-white/10 w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-fade-in animate-slide-in">
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-slate-900 border border-white/10 w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-fade-in animate-slide-in"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header */}
         <div className="p-5 border-b border-white/5 flex items-center justify-between bg-slate-950/40">
@@ -85,7 +98,12 @@ export default function RegisterBeneficiaryModal({ onClose, onSuccess }) {
             </h3>
             <p className="text-[10px] text-slate-400 mt-0.5">Step 1: Create a central profile record in the database. Duplicates will be blocked.</p>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-300 hover:text-white rounded-lg border border-white/10 hover:border-rose-500/40 hover:bg-rose-500/10 cursor-pointer transition-all" title="Close">
+          <button 
+            onClick={onClose} 
+            className="p-2 text-slate-300 hover:text-white rounded-lg border border-white/10 hover:border-rose-500/40 hover:bg-rose-500/10 cursor-pointer transition-all flex items-center gap-1.5 px-3" 
+            title="Close"
+          >
+            <span className="text-xs font-semibold">Close</span>
             <X className="w-5 h-5" />
           </button>
         </div>

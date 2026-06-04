@@ -3,11 +3,10 @@ import bcrypt from 'bcryptjs';
 import sequelize from '../config/db.js';
 
 const Admin = sequelize.define('Admin', {
-  _id: {
+  id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
-    field: 'id',
   },
   fullName: {
     type: DataTypes.STRING,

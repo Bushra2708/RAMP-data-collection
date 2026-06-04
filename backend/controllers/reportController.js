@@ -8,21 +8,17 @@ import Activity from '../models/Activity.js';
 // @access  Private/Admin
 export const getReportData = async (req, res) => {
   const { reportType } = req.params;
-  
+
   try {
     let reportData = [];
     let headers = [];
 
     switch (reportType) {
       case 'beneficiary-master': {
-        headers = ['Beneficiary ID', 'Full Name', 'Mobile Number', 'District', 'Mandal', 'Village', 'SHG Name', 'Qualification', 'Existing Entrepreneur'];
+        headers = ['Beneficiary ID', 'Full Name', 'Mobile Number', 'District', 'Mandal', 'Village', 'SHG Name', 'Qualification', 'Existing Entrepreneur', 'Assigned Counsellor'];
         const beneficiaries = await Beneficiary.findAll({
-          include: [{
-            model: Counsellor,
-            as: 'assignedCounsellor',
-            attributes: ['fullName']
-          }],
-          order: [['createdAt', 'DESC']]
+          include: [{ model: Counsellor, as: 'assignedCounsellor', attributes: ['fullName'] }],
+          order: [['createdAt', 'DESC']],
         });
         reportData = beneficiaries.map(b => [
           b.beneficiaryId || '',
@@ -34,6 +30,7 @@ export const getReportData = async (req, res) => {
           b.personalInfo?.shgName || 'None',
           b.personalInfo?.educationalQualification || '',
           b.entrepreneurProfile?.existingEntrepreneur || 'No',
+          b.assignedCounsellor?.fullName || 'Unassigned',
         ]);
         break;
       }
@@ -41,31 +38,22 @@ export const getReportData = async (req, res) => {
       case 'district-wise': {
         headers = ['District', 'Total Beneficiaries', 'Existing Entrepreneurs', 'New Entrepreneurs', 'Loans Facilitated'];
         const beneficiaries = await Beneficiary.findAll({ raw: true });
-        
         const distGroups = {};
         beneficiaries.forEach(b => {
           const dist = b.personalInfo?.district || 'Unspecified';
-          if (!distGroups[dist]) {
-            distGroups[dist] = { total: 0, existing: 0, newEnt: 0, loans: 0 };
-          }
+          if (!distGroups[dist]) distGroups[dist] = { total: 0, existing: 0, newEnt: 0, loans: 0 };
           distGroups[dist].total += 1;
           if (b.entrepreneurProfile?.existingEntrepreneur === 'Yes') {
             distGroups[dist].existing += 1;
           } else {
             distGroups[dist].newEnt += 1;
           }
-          const loanAmt = Number(b.loanTracking?.loanAmountSanctioned) || 0;
-          if (loanAmt > 0) {
+          if (Number(b.loanTracking?.loanAmountSanctioned) > 0) {
             distGroups[dist].loans += 1;
           }
         });
-
         reportData = Object.keys(distGroups).map(d => [
-          d,
-          distGroups[d].total,
-          distGroups[d].existing,
-          distGroups[d].newEnt,
-          distGroups[d].loans
+          d, distGroups[d].total, distGroups[d].existing, distGroups[d].newEnt, distGroups[d].loans
         ]);
         break;
       }
@@ -74,12 +62,10 @@ export const getReportData = async (req, res) => {
         headers = ['Beneficiary ID', 'Full Name', 'Batch Number', 'Batch Name', 'Training Venue', 'Training Completed', 'Certificate Issued'];
         const esdpList = await Beneficiary.findAll({
           where: {
-            'esdpTraining.batchNumber': {
-              [Op.and]: [
-                { [Op.ne]: null },
-                { [Op.ne]: '' }
-              ]
-            }
+            [Op.and]: [
+              { 'esdpTraining.batchNumber': { [Op.ne]: null } },
+              { 'esdpTraining.batchNumber': { [Op.ne]: '' } },
+            ]
           }
         });
         reportData = esdpList.map(b => [
@@ -89,7 +75,7 @@ export const getReportData = async (req, res) => {
           b.esdpTraining?.batchName || '',
           b.esdpTraining?.trainingVenue || '',
           b.esdpTraining?.trainingCompleted || 'No',
-          b.esdpTraining?.certificateIssued || 'No'
+          b.esdpTraining?.certificateIssued || 'No',
         ]);
         break;
       }
@@ -97,24 +83,18 @@ export const getReportData = async (req, res) => {
       case 'registration': {
         headers = ['Beneficiary ID', 'Full Name', 'Enterprise Name', 'GST Number', 'Udyam Registration Status', 'ZED Status', 'LEAN Status'];
         const regList = await Beneficiary.findAll();
-        
-        // Fetch all completed Udyam Registration activities
         let completedUdyamSet = new Set();
         try {
           const udyamActivities = await Activity.findAll({
-            attributes: ['beneficiary'],
-            where: {
-              supportCategory: 'Udyam Registration',
-              status: 'Completed'
-            }
+            attributes: ['beneficiary_id'],
+            where: { supportCategory: 'Udyam Registration', status: 'Completed' },
           });
-          completedUdyamSet = new Set(udyamActivities.map(a => String(a.beneficiary)));
+          completedUdyamSet = new Set(udyamActivities.map(a => String(a.beneficiary_id)));
         } catch (e) {
           console.error('Error fetching Udyam activities:', e.message);
         }
-
         reportData = regList.map(b => {
-          const isUdyamRegistered = completedUdyamSet.has(String(b._id));
+          const isUdyamRegistered = completedUdyamSet.has(String(b.id));
           return [
             b.beneficiaryId || '',
             b.personalInfo?.fullName || '',
@@ -122,7 +102,7 @@ export const getReportData = async (req, res) => {
             b.compliance?.gstNumber || 'Not Registered',
             isUdyamRegistered ? 'Registered' : 'Not Registered',
             b.certifications?.zedStatus || 'Not Applied',
-            b.certifications?.leanStatus || 'Not Applied'
+            b.certifications?.leanStatus || 'Not Applied',
           ];
         });
         break;
@@ -131,9 +111,7 @@ export const getReportData = async (req, res) => {
       case 'loan': {
         headers = ['Beneficiary ID', 'Full Name', 'Loan Scheme', 'Amount Requested', 'Amount Sanctioned', 'Sanction Date', 'Release Date'];
         const loanList = await Beneficiary.findAll({
-          where: {
-            'loanTracking.loanApplied': 'Yes'
-          }
+          where: { 'loanTracking.loanApplied': 'Yes' }
         });
         reportData = loanList.map(b => [
           b.beneficiaryId || '',
@@ -150,28 +128,23 @@ export const getReportData = async (req, res) => {
       case 'scheme': {
         headers = ['Beneficiary ID', 'Full Name', 'PMEGP Status', 'PMMY Status', 'PM Vishwakarma Status', 'PMFME Status', 'CGTMSE Status'];
         const schemeList = await Beneficiary.findAll();
-        
-        // Fetch all activities related to these schemes
         const schemeCategories = ['PMEGP', 'PMMY', 'PM Vishwakarma', 'PMFME', 'CGTMSE'];
         let statusMap = {};
         try {
           const activities = await Activity.findAll({
-            where: {
-              supportCategory: { [Op.in]: schemeCategories }
-            },
-            raw: true
+            where: { supportCategory: { [Op.in]: schemeCategories } },
+            raw: true,
           });
           activities.forEach(a => {
-            const bId = String(a.beneficiary);
+            const bId = String(a.beneficiary_id);
             if (!statusMap[bId]) statusMap[bId] = {};
             statusMap[bId][a.supportCategory] = a.status || 'Not Started';
           });
         } catch (e) {
           console.error('Error fetching scheme activities:', e.message);
         }
-
         reportData = schemeList.map(b => {
-          const bId = String(b._id);
+          const bId = String(b.id);
           const getStatus = (cat) => statusMap[bId]?.[cat] || 'Not Applied';
           return [
             b.beneficiaryId || '',
@@ -180,7 +153,7 @@ export const getReportData = async (req, res) => {
             getStatus('PMMY'),
             getStatus('PM Vishwakarma'),
             getStatus('PMFME'),
-            getStatus('CGTMSE')
+            getStatus('CGTMSE'),
           ];
         });
         break;
@@ -196,7 +169,7 @@ export const getReportData = async (req, res) => {
           b.marketAccess?.gemRegistered || 'No',
           b.marketAccess?.eCommercePlatforms?.amazon ? 'Yes' : 'No',
           b.marketAccess?.eCommercePlatforms?.meesho ? 'Yes' : 'No',
-          b.marketAccess?.brandPromotionSupportAvailed || 'No'
+          b.marketAccess?.brandPromotionSupportAvailed || 'No',
         ]);
         break;
       }
@@ -205,12 +178,10 @@ export const getReportData = async (req, res) => {
         headers = ['Beneficiary ID', 'Full Name', 'Enterprise Name', 'Sector', 'Type', 'Status', 'Address'];
         const entList = await Beneficiary.findAll({
           where: {
-            'entrepreneurProfile.enterpriseName': {
-              [Op.and]: [
-                { [Op.ne]: null },
-                { [Op.ne]: '' }
-              ]
-            }
+            [Op.and]: [
+              { 'entrepreneurProfile.enterpriseName': { [Op.ne]: null } },
+              { 'entrepreneurProfile.enterpriseName': { [Op.ne]: '' } },
+            ]
           }
         });
         reportData = entList.map(b => [
@@ -231,30 +202,47 @@ export const getReportData = async (req, res) => {
         try {
           counsellors = await Counsellor.findAll();
         } catch (e) {
-          console.error('Error fetching counsellors for report:', e.message);
+          console.error('Error fetching counsellors:', e.message);
         }
         const performanceData = [];
-        
         for (const c of counsellors) {
           let regCount = 0;
           let actCount = 0;
           try {
-            regCount = await Beneficiary.count({ where: { assignedCounsellorId: c._id } });
-            actCount = await Activity.count({ where: { counsellorId: c._id } });
+            regCount = await Beneficiary.count({ where: { assignedCounsellorId: c.id } });
+            actCount = await Activity.count({ where: { counsellor_id: c.id } });
           } catch (e) {
             console.error(`Error counting for counsellor ${c.fullName}:`, e.message);
           }
-          
           performanceData.push([
             c.fullName || 'Unknown',
             c.district || 'N/A',
             c.mobileNumber || 'N/A',
             c.status || 'Unknown',
             regCount,
-            actCount
+            actCount,
           ]);
         }
         reportData = performanceData;
+        break;
+      }
+
+      case 'activity': {
+        headers = ['Activity Date', 'Beneficiary ID', 'Beneficiary Name', 'Counsellor', 'Category', 'Description', 'Status', 'Next Follow-up'];
+        const activities = await Activity.findAll({
+          include: [{ model: Beneficiary, as: 'beneficiaryRecord', attributes: ['beneficiaryId', 'personalInfo'] }],
+          order: [['activityDate', 'DESC']],
+        });
+        reportData = activities.map(a => [
+          a.activityDate ? new Date(a.activityDate).toLocaleDateString() : '',
+          a.beneficiaryRecord?.beneficiaryId || '',
+          a.beneficiaryRecord?.personalInfo?.fullName || '',
+          a.counsellorName || '',
+          a.supportCategory || '',
+          a.description || '',
+          a.status || '',
+          a.nextFollowUpDate ? new Date(a.nextFollowUpDate).toLocaleDateString() : 'N/A',
+        ]);
         break;
       }
 
@@ -262,13 +250,7 @@ export const getReportData = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Invalid report type specified' });
     }
 
-    res.json({
-      success: true,
-      reportType,
-      headers,
-      data: reportData
-    });
-
+    res.json({ success: true, reportType, headers, data: reportData });
   } catch (err) {
     console.error('Report generation error:', err);
     res.status(500).json({ success: false, message: err.message || 'Internal server error generating report' });

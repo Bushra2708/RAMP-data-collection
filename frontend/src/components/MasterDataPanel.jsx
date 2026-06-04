@@ -1,12 +1,86 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Layers, Plus, Trash, Save, GraduationCap } from 'lucide-react';
+import { Layers, Plus, Trash, Save, GraduationCap, Download, Database, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function MasterDataPanel() {
   const { masterData, fetchMasterData, API_BASE, getHeaders } = useApp();
-  const [activeTab, setActiveTab] = useState('districts'); // 'districts', 'esdpBatches', 'supportCategories', 'sectors'
+  const [activeTab, setActiveTab] = useState('districts'); // 'districts', 'esdpBatches', 'supportCategories', 'sectors', 'backups'
   const [newItem, setNewItem] = useState('');
+
+  // Backup State
+  const [backups, setBackups] = useState([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [triggeringBackup, setTriggeringBackup] = useState(false);
+
+  const fetchBackupsList = async () => {
+    setLoadingBackups(true);
+    try {
+      const res = await fetch(`${API_BASE}/backup/list`, {
+        headers: getHeaders()
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBackups(data.backups);
+      } else {
+        toast.error('Failed to load backup files list.');
+      }
+    } catch (err) {
+      toast.error('Network error loading backups.');
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'backups') {
+      fetchBackupsList();
+    }
+  }, [activeTab]);
+
+  const handleTriggerBackup = async () => {
+    setTriggeringBackup(true);
+    try {
+      const res = await fetch(`${API_BASE}/backup/trigger`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Backup compiled and stored on server.');
+        fetchBackupsList();
+      } else {
+        toast.error(data.message || 'Backup failed.');
+      }
+    } catch (err) {
+      toast.error('Network error triggering database backup.');
+    } finally {
+      setTriggeringBackup(false);
+    }
+  };
+
+  const handleDownloadBackup = async (fileName) => {
+    try {
+      const res = await fetch(`${API_BASE}/backup/download/${fileName}`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) {
+        throw new Error('Failed to download file.');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Backup downloaded successfully.');
+    } catch (err) {
+      toast.error('Failed to download backup file.');
+    }
+  };
   
   // ESDP Batch Form State
   const [newBatch, setNewBatch] = useState({
@@ -110,6 +184,15 @@ export default function MasterDataPanel() {
         >
           ESDP Batches
         </button>
+        <div className="pt-3 mt-3 border-t border-white/5 space-y-1">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest px-2 mb-2">System</h3>
+          <button
+            onClick={() => setActiveTab('backups')}
+            className={`w-full text-left ${tabClass} ${activeTab === 'backups' ? activeTabClass : inactiveTabClass}`}
+          >
+            Database Backups
+          </button>
+        </div>
       </div>
 
       {/* Editor Panel */}
@@ -117,32 +200,37 @@ export default function MasterDataPanel() {
         <div className="flex items-center justify-between border-b border-white/5 pb-4">
           <div>
             <h4 className="text-sm font-bold text-white uppercase tracking-wider">
-              Configure {activeTab.replace(/([A-Z])/g, ' $1')}
+              {activeTab === 'backups' ? 'Database Backup Control' : `Configure ${activeTab.replace(/([A-Z])/g, ' $1')}`}
             </h4>
-            <p className="text-[10px] text-slate-400 mt-0.5">Manage details populated in drop-down fields across the platform.</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              {activeTab === 'backups' 
+                ? 'Create, manage, and download system data dumps for recovery and compliance.' 
+                : 'Manage details populated in drop-down fields across the platform.'}
+            </p>
           </div>
         </div>
 
         {/* INPUT FORMS */}
-        {activeTab !== 'esdpBatches' ? (
-          <form onSubmit={handleAddTextItem} className="flex gap-2">
-            <input
-              type="text"
-              required
-              placeholder={`Add new ${activeTab.replace(/([A-Z])/g, ' $1').toLowerCase()}`}
-              value={newItem}
-              onChange={(e) => setNewItem(e.target.value)}
-              className="flex-grow bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
-            />
-            <button
-              type="submit"
-              className="py-2.5 px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" /> Add Item
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleAddBatchItem} className="p-4 bg-slate-950/40 border border-white/5 rounded-xl space-y-4">
+        {activeTab !== 'backups' && (
+          activeTab !== 'esdpBatches' ? (
+            <form onSubmit={handleAddTextItem} className="flex gap-2">
+              <input
+                type="text"
+                required
+                placeholder={`Add new ${activeTab.replace(/([A-Z])/g, ' $1').toLowerCase()}`}
+                value={newItem}
+                onChange={(e) => setNewItem(e.target.value)}
+                className="flex-grow bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
+              />
+              <button
+                type="submit"
+                className="py-2.5 px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Add Item
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleAddBatchItem} className="p-4 bg-slate-950/40 border border-white/5 rounded-xl space-y-4">
             <h5 className="text-xs font-bold text-teal-400 flex items-center gap-1"><GraduationCap className="w-4 h-4" /> Schedule New ESDP Batch</h5>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               <div>
@@ -221,8 +309,10 @@ export default function MasterDataPanel() {
             </div>
           </form>
         )}
+      )}
 
-        {/* LIST PREVIEWS */}
+      {/* LIST PREVIEWS */}
+      {activeTab !== 'backups' && (
         <div className="bg-slate-950/20 rounded-xl border border-white/5 overflow-hidden">
           {activeTab !== 'esdpBatches' ? (
             <div className="divide-y divide-white/5 max-h-96 overflow-y-auto">
@@ -283,7 +373,73 @@ export default function MasterDataPanel() {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'backups' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center bg-slate-950/40 p-4 border border-white/5 rounded-xl">
+            <div className="space-y-1">
+              <h5 className="text-xs font-bold text-teal-400 flex items-center gap-1.5">
+                <Database className="w-4 h-4" /> Trigger Manual Backup
+              </h5>
+              <p className="text-[10px] text-slate-400">Instantly generate a JSON dump containing all tables.</p>
+            </div>
+            <button
+              onClick={handleTriggerBackup}
+              disabled={triggeringBackup}
+              className="py-2 px-3 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${triggeringBackup ? 'animate-spin' : ''}`} />
+              {triggeringBackup ? 'Generating...' : 'Backup Now'}
+            </button>
+          </div>
+
+          <div className="bg-slate-950/20 rounded-xl border border-white/5 overflow-hidden">
+            <div className="p-3 border-b border-white/10 bg-slate-950/40 font-semibold text-xs text-white">
+              Saved Backup Files
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-white/10 bg-slate-950/40 text-slate-400">
+                    <th className="p-3">File Name</th>
+                    <th className="p-3">File Size</th>
+                    <th className="p-3">Created At</th>
+                    <th className="p-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-slate-300">
+                  {backups.map((b, idx) => (
+                    <tr key={idx} className="hover:bg-white/5">
+                      <td className="p-3 font-mono font-bold text-teal-400">{b.fileName}</td>
+                      <td className="p-3">{(b.sizeBytes / 1024).toFixed(2)} KB</td>
+                      <td className="p-3">{new Date(b.createdAt).toLocaleString()}</td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => handleDownloadBackup(b.fileName)}
+                          className="p-1 text-slate-400 hover:text-teal-400 transition-colors cursor-pointer"
+                          title="Download backup file"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {backups.length === 0 && !loadingBackups && (
+                    <tr>
+                      <td colSpan="4" className="p-6 text-center text-slate-500">
+                        No backup files found. Trigger one above!
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
+    </div>
     </div>
   );
 }
