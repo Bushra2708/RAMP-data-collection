@@ -1,6 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
-import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import multer from 'multer';
+import { Readable } from 'stream';
 
 // Configure Cloudinary with environment variables
 cloudinary.config({
@@ -9,21 +9,56 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Multer storage using Cloudinary
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'rbhms_documents',
-    allowed_formats: ['pdf', 'jpg', 'jpeg', 'png'],
-    resource_type: 'auto', // auto-detect file type (image vs raw for PDFs)
-    transformation: [{ quality: 'auto' }],
+/**
+ * Custom multer storage engine that uploads files directly to Cloudinary v2
+ * using the upload_stream API. No multer-storage-cloudinary package needed.
+ */
+const cloudinaryStorage = {
+  _handleFile(req, file, cb) {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'rbhms_documents',
+        resource_type: 'auto', // handles images AND PDFs/raw files
+        allowed_formats: ['pdf', 'jpg', 'jpeg', 'png'],
+        transformation: [{ quality: 'auto' }],
+      },
+      (error, result) => {
+        if (error) {
+          return cb(error);
+        }
+        cb(null, {
+          path: result.secure_url,      // full Cloudinary HTTPS URL
+          filename: result.public_id,  // public_id used for deletion
+          size: result.bytes,
+        });
+      }
+    );
+
+    // Pipe the incoming file buffer into the Cloudinary upload stream
+    const readableStream = new Readable();
+    readableStream.push(file.stream);
+    readableStream.push(null);
+    file.stream.pipe(uploadStream);
   },
-});
+
+  _removeFile(req, file, cb) {
+    // Delete file from Cloudinary using the stored public_id
+    cloudinary.uploader.destroy(file.filename, cb);
+  },
+};
 
 const cloudinaryUpload = multer({
-  storage: storage,
+  storage: cloudinaryStorage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Supported formats: PDF, JPG, JPEG, PNG only.'), false);
+    }
   },
 });
 
