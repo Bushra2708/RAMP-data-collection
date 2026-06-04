@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 const AppContext = createContext();
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
-
+console.log("API_BASE:", API_BASE);
 export const AppProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('rbhms_token') || '');
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('rbhms_user') || 'null'));
@@ -17,10 +17,10 @@ export const AppProvider = ({ children }) => {
     esdpBatches: [],
     supportCategories: [],
   });
-  
+
   // Simulation Toggle (for testing both role views on desktop)
   const [simulationMode, setSimulationMode] = useState(false); // true: simulate mobile counsellor view
-  
+
   // Set Auth headers
   const getHeaders = (isMultipart = false) => {
     const headers = {};
@@ -84,7 +84,7 @@ export const AppProvider = ({ children }) => {
         body: JSON.stringify(credentials),
       });
       const data = await res.json();
-      
+
       if (data.success) {
         setToken(data.token);
         setUser(data.user);
