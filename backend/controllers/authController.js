@@ -22,20 +22,9 @@ export const seedInitialUsers = async () => {
         fullName: 'ALEAP Head Office Admin',
         email: 'admin@aleap.org',
         password: 'admin123',
-      });
-      console.log('Seeded default admin: admin@aleap.org / admin123');
-    }
-
-    const counsellorCount = await Counsellor.count();
-    if (counsellorCount === 0) {
-      await Counsellor.create({
-        fullName: 'Kiran Kumar',
-        mobileNumber: '9999999999',
-        password: 'counsellor123',
-        district: 'Warangal',
         status: 'Active',
       });
-      console.log('Seeded default counsellor: 9999999999 / counsellor123');
+      console.log('Seeded default admin: admin@aleap.org / admin123');
     }
   } catch (err) {
     console.error('Error seeding initial users:', err.message);
@@ -64,6 +53,21 @@ export const adminLogin = async (req, res) => {
         details: { email, message: 'Admin user not found' }
       });
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    if (admin.status !== 'Active') {
+      await logAudit({
+        req,
+        userId: admin.id,
+        userIdentifier: admin.email,
+        userRole: 'Admin',
+        action: 'LOGIN_FAILED',
+        entity: 'Admin',
+        entityId: admin.id,
+        status: 'FAILURE',
+        details: { email: admin.email, message: 'Admin is inactive' }
+      });
+      return res.status(403).json({ success: false, message: 'Your administrator account is inactive.' });
     }
 
     const isMatch = await admin.comparePassword(password);
@@ -252,9 +256,13 @@ export const resetPassword = async (req, res) => {
 // @route   POST /api/auth/counsellor/register
 // @access  Private/Admin
 export const registerCounsellor = async (req, res) => {
-  const { fullName, mobileNumber, password, district } = req.body;
+  const { fullName, mobileNumber, email, password, district } = req.body;
   if (!fullName || !mobileNumber || !password || !district) {
-    return res.status(400).json({ success: false, message: 'Please provide all details' });
+    return res.status(400).json({ success: false, message: 'Please provide all details (fullName, mobileNumber, password, district)' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
   }
 
   try {
@@ -263,9 +271,17 @@ export const registerCounsellor = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Counsellor with this mobile number already exists' });
     }
 
+    if (email && email.trim() !== '') {
+      const emailExists = await Counsellor.findOne({ where: { email: email.toLowerCase() } });
+      if (emailExists) {
+        return res.status(400).json({ success: false, message: 'Counsellor with this email already exists' });
+      }
+    }
+
     const counsellor = await Counsellor.create({
       fullName,
       mobileNumber,
+      email: email ? email.toLowerCase() : null,
       password,
       district,
       status: 'Active',
@@ -276,16 +292,17 @@ export const registerCounsellor = async (req, res) => {
       action: 'REGISTER_COUNSELLOR',
       entity: 'Counsellor',
       entityId: counsellor.id,
-      details: { fullName, mobileNumber, district }
+      details: { fullName, mobileNumber, email, district }
     });
 
     res.status(201).json({
       success: true,
-      message: 'Counsellor registered successfully',
+      message: 'Counsellor account created successfully.',
       counsellor: {
         id: counsellor.id,
         fullName: counsellor.fullName,
         mobileNumber: counsellor.mobileNumber,
+        email: counsellor.email,
         district: counsellor.district,
         status: counsellor.status,
       },
@@ -302,6 +319,10 @@ export const registerAdmin = async (req, res) => {
   const { fullName, email, password } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ success: false, message: 'Please provide all details' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
   }
 
   try {
@@ -333,6 +354,7 @@ export const registerAdmin = async (req, res) => {
       fullName,
       email: email.toLowerCase(),
       password,
+      status: 'Active',
     });
 
     await logAudit({
@@ -350,6 +372,7 @@ export const registerAdmin = async (req, res) => {
         id: admin.id,
         fullName: admin.fullName,
         email: admin.email,
+        status: admin.status,
       },
     });
   } catch (err) {
@@ -458,6 +481,139 @@ export const deleteCounsellor = async (req, res) => {
     });
 
     res.json({ success: true, message: 'Counsellor deactivated successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc    Get all admins (Admin Only)
+// @route   GET /api/auth/admins
+// @access  Private/Admin
+export const getAdmins = async (req, res) => {
+  try {
+    const list = await Admin.findAll({
+      attributes: { exclude: ['password'] },
+      order: [['fullName', 'ASC']],
+    });
+    res.json({ success: true, count: list.length, admins: list });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc    Update Admin (Admin Only)
+// @route   PUT /api/auth/admins/:id
+// @access  Private/Admin
+export const updateAdmin = async (req, res) => {
+  try {
+    const admin = await Admin.findByPk(req.params.id);
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    const { fullName, email, status } = req.body;
+    if (fullName) admin.fullName = fullName;
+    if (email) {
+      const emailExists = await Admin.findOne({ where: { email: email.toLowerCase() } });
+      if (emailExists && emailExists.id !== admin.id) {
+        return res.status(400).json({ success: false, message: 'Admin with this email already exists' });
+      }
+      admin.email = email.toLowerCase();
+    }
+    if (status && ['Active', 'Inactive'].includes(status)) {
+      if (status === 'Inactive') {
+        const activeAdminsCount = await Admin.count({ where: { status: 'Active' } });
+        if (activeAdminsCount <= 1 && admin.status === 'Active') {
+          return res.status(400).json({ success: false, message: 'Cannot deactivate the only active administrator.' });
+        }
+      }
+      admin.status = status;
+    }
+
+    await admin.save();
+
+    await logAudit({
+      req,
+      action: 'UPDATE_ADMIN',
+      entity: 'Admin',
+      entityId: admin.id,
+      details: { fullName, email: admin.email, status }
+    });
+
+    res.json({
+      success: true,
+      message: 'Admin updated successfully',
+      admin: {
+        id: admin.id,
+        fullName: admin.fullName,
+        email: admin.email,
+        status: admin.status,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc    Reset Counsellor Password (Admin Only)
+// @route   POST /api/auth/counsellors/:id/reset-password
+// @access  Private/Admin
+export const resetCounsellorPassword = async (req, res) => {
+  try {
+    const counsellor = await Counsellor.findByPk(req.params.id);
+    if (!counsellor) {
+      return res.status(404).json({ success: false, message: 'Counsellor not found' });
+    }
+
+    const tempPassword = 'Temp' + Math.random().toString(36).slice(-6);
+    counsellor.password = tempPassword;
+    await counsellor.save();
+
+    await logAudit({
+      req,
+      action: 'RESET_COUNSELLOR_PASSWORD',
+      entity: 'Counsellor',
+      entityId: counsellor.id,
+      details: { counsellorId: counsellor.id, fullName: counsellor.fullName }
+    });
+
+    res.json({
+      success: true,
+      message: 'Counsellor password reset successfully.',
+      tempPassword,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc    Reset Admin Password (Admin Only)
+// @route   POST /api/auth/admins/:id/reset-password
+// @access  Private/Admin
+export const resetAdminPassword = async (req, res) => {
+  try {
+    const admin = await Admin.findByPk(req.params.id);
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    const tempPassword = 'Temp' + Math.random().toString(36).slice(-6);
+    admin.password = tempPassword;
+    await admin.save();
+
+    await logAudit({
+      req,
+      action: 'RESET_ADMIN_PASSWORD',
+      entity: 'Admin',
+      entityId: admin.id,
+      details: { adminId: admin.id, email: admin.email }
+    });
+
+    res.json({
+      success: true,
+      message: 'Admin password reset successfully.',
+      tempPassword,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

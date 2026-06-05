@@ -3,6 +3,7 @@ import sequelize from '../config/db.js';
 import Beneficiary from '../models/Beneficiary.js';
 import Activity from '../models/Activity.js';
 import Counsellor from '../models/Counsellor.js';
+import Admin from '../models/Admin.js';
 
 // @desc    Get dashboard summary statistics & chart data
 // @route   GET /api/analytics/dashboard
@@ -148,6 +149,11 @@ export const getDashboardStats = async (req, res) => {
       counsellorStats.push({ counsellor: c.fullName, district: c.district, count });
     }
 
+    // Fetch counts for dashboard cards
+    const totalCounsellors = await Counsellor.count();
+    const totalAdmins = await Admin.count();
+    const totalActivities = await Activity.count();
+
     res.json({
       success: true,
       summary: {
@@ -160,6 +166,9 @@ export const getDashboardStats = async (req, res) => {
         gemCount,
         loansFacilitated,
         enterprisesEstablished,
+        totalCounsellors,
+        totalAdmins,
+        totalActivities,
       },
       districtStats,
       sectorStats,

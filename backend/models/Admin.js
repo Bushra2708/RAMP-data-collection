@@ -28,6 +28,10 @@ const Admin = sequelize.define('Admin', {
     type: DataTypes.STRING,
     defaultValue: 'Admin',
   },
+  status: {
+    type: DataTypes.ENUM('Active', 'Inactive'),
+    defaultValue: 'Active',
+  },
 }, {
   freezeTableName: true,
   hooks: {

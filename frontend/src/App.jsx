@@ -7,6 +7,8 @@ import BeneficiaryList from './components/BeneficiaryList';
 import ReportCenter from './components/ReportCenter';
 import MasterDataPanel from './components/MasterDataPanel';
 import AuditLogViewer from './components/AuditLogViewer';
+import AdminUserManagement from './components/AdminUserManagement';
+import AdminManagement from './components/AdminManagement';
 import {
   LayoutDashboard,
   Users,
@@ -17,6 +19,7 @@ import {
   Laptop,
   ChevronRight,
   Shield,
+  UserCheck,
 } from 'lucide-react';
 
 function AppContent() {
@@ -31,10 +34,14 @@ function AppContent() {
 
   const menuOptions = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'directory', label: 'Beneficiary Directory', icon: Users },
-    { id: 'reports', label: 'Report Center', icon: FileText },
-    { id: 'settings', label: 'Master Settings', icon: Settings },
-    { id: 'audit', label: 'Audit Logs', icon: Shield },
+    { id: 'directory', label: 'Beneficiaries', icon: Users },
+    { id: 'reports', label: 'Reports', icon: FileText },
+    { id: 'settings', label: 'Master Data', icon: Settings },
+    ...(user.role === 'Admin' && !simulationMode ? [
+      { id: 'users', label: 'User Management', icon: UserCheck },
+      { id: 'admins', label: 'Admin Management', icon: Shield },
+      { id: 'audit', label: 'Audit Logs', icon: Shield },
+    ] : []),
   ];
 
   return (
@@ -164,6 +171,8 @@ function AppContent() {
               {activeMenu === 'directory' && <BeneficiaryList />}
               {activeMenu === 'reports' && <ReportCenter />}
               {activeMenu === 'settings' && <MasterDataPanel />}
+              {activeMenu === 'users' && <AdminUserManagement />}
+              {activeMenu === 'admins' && <AdminManagement />}
               {activeMenu === 'audit' && <AuditLogViewer />}
             </div>
           </main>
