@@ -24,21 +24,32 @@ const cloudinaryStorage = {
       },
       (error, result) => {
         if (error) {
+          console.error('Cloudinary upload failed:', error);
           return cb(error);
         }
+        console.log('Cloudinary upload result:', {
+          public_id: result.public_id,
+          secure_url: result.secure_url,
+          format: result.format,
+          resource_type: result.resource_type,
+          original_filename: result.original_filename,
+        });
         cb(null, {
           path: result.secure_url,      // full Cloudinary HTTPS URL
           filename: result.public_id,  // public_id used for deletion
           size: result.bytes,
+          original_filename: result.original_filename,
+          format: result.format,
+          resource_type: result.resource_type,
         });
       }
     );
 
-    // Pipe the incoming file buffer into the Cloudinary upload stream
-    const readableStream = new Readable();
-    readableStream.push(file.stream);
-    readableStream.push(null);
-    file.stream.pipe(uploadStream);
+    const readable = file.stream ? file.stream : Readable.from(file.buffer);
+    readable.pipe(uploadStream).on('error', (streamError) => {
+      console.error('Cloudinary upload stream error:', streamError);
+      cb(streamError);
+    });
   },
 
   _removeFile(req, file, cb) {

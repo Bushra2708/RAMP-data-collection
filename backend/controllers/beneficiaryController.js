@@ -505,6 +505,12 @@ export const uploadDocument = async (req, res) => {
   }
 
   try {
+    console.log('FILE RECEIVED:', req.file);
+    console.log('FILES RECEIVED:', req.files);
+    console.log('BODY:', req.body);
+    const uploadedFile = req.file;
+    console.log('UPLOAD RESULT:', uploadedFile);
+
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       if (storageType === 'local' && req.file.path) try { fs.unlinkSync(req.file.path); } catch(e) {}
@@ -516,28 +522,40 @@ export const uploadDocument = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized.' });
     }
 
-    let docPath, publicId, format;
+    let docPath, publicId, format, documentUrl, originalFilename, fileType;
 
     if (storageType === 's3') {
       docPath = req.file.location;
       publicId = req.file.key;
+      documentUrl = req.file.location;
+      originalFilename = req.file.originalname;
+      fileType = req.file.mimetype;
       format = path.extname(req.file.originalname).substring(1).toUpperCase() || 'FILE';
     } else if (storageType === 'cloudinary') {
       docPath = req.file.path;
       publicId = req.file.filename;
+      documentUrl = req.file.path;
+      originalFilename = req.file.originalname || req.file.original_filename || req.file.originalFilename;
+      fileType = req.file.mimetype || req.file.resource_type || 'application/octet-stream';
       format = path.extname(req.file.originalname).substring(1).toUpperCase() || 'FILE';
     } else {
       docPath = `/upload/${req.file.filename}`;
       publicId = null;
+      documentUrl = `${process.env.API_BASE || ''}${docPath}`;
+      originalFilename = req.file.originalname;
+      fileType = req.file.mimetype;
       format = path.extname(req.file.originalname).substring(1).toUpperCase();
     }
 
     const documentEntry = await BeneficiaryDocument.create({
-      beneficiary_id: req.params.id,
+      beneficiary: req.params.id,
       category,
       name: documentName,
       path: docPath,
-      publicId,
+      documentUrl,
+      public_id: publicId,
+      original_filename: originalFilename,
+      fileType,
       format,
       uploadedBy: req.user.id,
       uploadedByRole: req.role,
@@ -560,7 +578,14 @@ export const uploadDocument = async (req, res) => {
     const { fileSlot } = req.body;
     if (fileSlot) {
       const updatedFiles = { ...beneficiary.files };
-      updatedFiles[fileSlot] = { path: docPath, publicId };
+      updatedFiles[fileSlot] = {
+        path: docPath,
+        documentUrl,
+        publicId,
+        originalFilename,
+        fileType,
+        name: documentName,
+      };
       beneficiary.files = updatedFiles;
       beneficiary.changed('files', true);
     }

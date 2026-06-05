@@ -37,8 +37,20 @@ const BeneficiaryDocument = sequelize.define('BeneficiaryDocument', {
     type: DataTypes.STRING,
     allowNull: false,
   },
-  publicId: {
+  documentUrl: {
     type: DataTypes.STRING,
+    allowNull: true,
+  },
+  public_id: {
+    type: DataTypes.STRING,
+  },
+  original_filename: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  fileType: {
+    type: DataTypes.STRING,
+    allowNull: true,
   },
   format: {
     type: DataTypes.STRING,

@@ -22,7 +22,17 @@ router.route('/:id')
   .put(protect, updateBeneficiary);
 
 router.post('/:id/activity', protect, addActivity);
-router.post('/:id/upload', protect, upload.single('file'), uploadDocument);
+const handleUploadMiddleware = (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      console.error('UPLOAD MIDDLEWARE ERROR:', err);
+      return res.status(400).json({ success: false, message: err.message || 'File upload failed' });
+    }
+    next();
+  });
+};
+
+router.post('/:id/upload', protect, handleUploadMiddleware, uploadDocument);
 router.delete('/:id/document/:docId', protect, adminOnly, deleteDocument);
 
 export default router;

@@ -67,24 +67,27 @@ const FileSlotUpload = ({ label, slotKey, beneficiaryId, files, API_BASE, getHea
       </div>
       
       {fileData?.path ? (
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <a
-            href={fileData.path.startsWith('http') ? fileData.path : `http://localhost:5000${fileData.path}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-teal-400 hover:underline truncate max-w-[150px]"
-            title="Click to view file"
-          >
-            View File
-          </a>
-          <button
-            type="button"
-            onClick={() => fileRef.current.click()}
-            disabled={uploading}
-            className="text-[10px] text-slate-400 hover:text-white border border-white/10 px-2 py-1 rounded bg-slate-900 cursor-pointer"
-          >
-            {uploading ? 'Uploading...' : 'Replace'}
-          </button>
+        <div className="flex flex-col gap-2 mt-1">
+          <div className="flex items-center justify-between gap-2">
+            <a
+              href={fileData.path.startsWith('http') ? fileData.path : `${API_BASE}${fileData.path}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-teal-400 hover:underline truncate max-w-[150px]"
+              title="Click to view file"
+            >
+              View File
+            </a>
+            <button
+              type="button"
+              onClick={() => fileRef.current.click()}
+              disabled={uploading}
+              className="text-[10px] text-slate-400 hover:text-white border border-white/10 px-2 py-1 rounded bg-slate-900 cursor-pointer"
+            >
+              {uploading ? 'Uploading...' : 'Replace'}
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-400 truncate max-w-[250px]">{fileData.originalFilename || fileData.name || label}</p>
         </div>
       ) : (
         <div className="mt-1">
@@ -346,7 +349,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
       onClick={onClose}
     >
       <div 
-        className="bg-slate-900 border border-white/10 w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[95vh] animate-fade-in"
+        className="bg-slate-900 border border-white/10 w-full max-w-[95vw] md:max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-fade-in overflow-hidden mx-auto"
         onClick={(e) => e.stopPropagation()}
       >
         

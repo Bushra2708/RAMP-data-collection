@@ -86,7 +86,7 @@ export default function RegisterBeneficiaryModal({ onClose, onSuccess }) {
       onClick={onClose}
     >
       <div 
-        className="bg-slate-900 border border-white/10 w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-fade-in animate-slide-in"
+        className="bg-slate-900 border border-white/10 w-full max-w-[95vw] md:max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-fade-in animate-slide-in mx-auto"
         onClick={(e) => e.stopPropagation()}
       >
         
