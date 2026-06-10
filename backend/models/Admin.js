@@ -27,6 +27,9 @@ const Admin = sequelize.define('Admin', {
   role: {
     type: DataTypes.STRING,
     defaultValue: 'Admin',
+    validate: {
+      isIn: [['Admin', 'Manager']],
+    },
   },
   status: {
     type: DataTypes.ENUM('Active', 'Inactive'),

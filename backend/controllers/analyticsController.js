@@ -7,66 +7,79 @@ import Admin from '../models/Admin.js';
 
 // @desc    Get dashboard summary statistics & chart data
 // @route   GET /api/analytics/dashboard
-// @access  Private/Admin
+// @access  Private
 export const getDashboardStats = async (req, res) => {
   try {
+    const beneficiaryScope = req.role === 'Counsellor' ? { assignedCounsellorId: req.user.id } : {};
+    const withBeneficiaryScope = (condition) => {
+      if (req.role === 'Counsellor') {
+        return {
+          [Op.and]: [
+            beneficiaryScope,
+            sequelize.literal(condition),
+          ],
+        };
+      }
+      return sequelize.literal(condition);
+    };
+
     // 1. Core Summary Metrics
-    const totalBeneficiaries = await Beneficiary.count();
+    const totalBeneficiaries = await Beneficiary.count({ where: beneficiaryScope });
 
     // ESDP completed count
     const totalEsdp = await Beneficiary.count({
-      where: sequelize.literal(`"Beneficiary"."esdpTraining"->>'trainingCompleted' = 'Yes'`)
+      where: withBeneficiaryScope(`"Beneficiary"."esdpTraining"->>'trainingCompleted' = 'Yes'`)
     });
 
     // Existing Entrepreneurs count
     const existingEntrepreneurs = await Beneficiary.count({
-      where: sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'existingEntrepreneur' = 'Yes'`)
+      where: withBeneficiaryScope(`"Beneficiary"."entrepreneurProfile"->>'existingEntrepreneur' = 'Yes'`)
     });
 
     // New Entrepreneurs count
     const newEntrepreneurs = await Beneficiary.count({
-      where: sequelize.literal(
+      where: withBeneficiaryScope(
         `"Beneficiary"."entrepreneurProfile"->>'existingEntrepreneur' = 'No' AND "Beneficiary"."entrepreneurProfile"->>'interestedInNewBusiness' = 'Yes'`
       )
     });
 
-    // Udyam count via Activity table
-    const udyamActivities = await Activity.findAll({
-      attributes: ['beneficiary_id'],
-      where: {
-        supportCategory: 'Udyam Registration',
-        status: 'Completed',
-      },
-      group: ['beneficiary_id'],
-      raw: true,
+    // Udyam count via Activity table (distinct beneficiaries)
+    const udyamWhere = {
+      supportCategory: 'Udyam Registration',
+      status: 'Completed',
+      ...(req.role === 'Counsellor' ? { counsellorId: req.user.id } : {}),
+    };
+    const udyamCount = await Activity.count({
+      distinct: true,
+      col: 'beneficiary',
+      where: udyamWhere,
     });
-    const udyamCount = udyamActivities.length;
 
     // ONDC count
     const ondcCount = await Beneficiary.count({
-      where: sequelize.literal(`"Beneficiary"."marketAccess"->>'ondcRegistered' = 'Yes'`)
+      where: withBeneficiaryScope(`"Beneficiary"."marketAccess"->>'ondcRegistered' = 'Yes'`)
     });
 
     // GeM count
     const gemCount = await Beneficiary.count({
-      where: sequelize.literal(`"Beneficiary"."marketAccess"->>'gemRegistered' = 'Yes'`)
+      where: withBeneficiaryScope(`"Beneficiary"."marketAccess"->>'gemRegistered' = 'Yes'`)
     });
 
     // Loans Facilitated (loanAmountSanctioned > 0)
     const loansFacilitated = await Beneficiary.count({
-      where: sequelize.literal(
+      where: withBeneficiaryScope(
         `"Beneficiary"."loanTracking"->>'loanApplied' = 'Yes' AND CAST(NULLIF("Beneficiary"."loanTracking"->>'loanAmountSanctioned', '') AS NUMERIC) > 0`
       )
     });
 
     // Active Enterprises
     const activeEnterprises = await Beneficiary.count({
-      where: sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'businessStatus' = 'Active'`)
+      where: withBeneficiaryScope(`"Beneficiary"."entrepreneurProfile"->>'businessStatus' = 'Active'`)
     });
     const enterprisesEstablished = Math.max(activeEnterprises, udyamCount);
 
     // 2. Fetch all beneficiaries for JS-side chart aggregation
-    const list = await Beneficiary.findAll({ raw: true });
+    const list = await Beneficiary.findAll({ where: beneficiaryScope, raw: true });
 
     // A. District-Wise Distribution
     const districtGroups = {};
@@ -150,9 +163,11 @@ export const getDashboardStats = async (req, res) => {
     }
 
     // Fetch counts for dashboard cards
-    const totalCounsellors = await Counsellor.count();
-    const totalAdmins = await Admin.count();
-    const totalActivities = await Activity.count();
+    const totalCounsellors = req.role === 'Admin' ? await Counsellor.count() : 1;
+    const totalAdmins = req.role === 'Admin' ? await Admin.count() : 0;
+    const totalActivities = await Activity.count({
+      where: req.role === 'Counsellor' ? { counsellorId: req.user.id } : {},
+    });
 
     res.json({
       success: true,

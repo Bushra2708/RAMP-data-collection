@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import Counsellor from '../models/Counsellor.js';
 import Admin from '../models/Admin.js';
+import Beneficiary from '../models/Beneficiary.js';
 import { logAudit } from '../middleware/auditLogger.js';
 
 // Helper: Generate JWT Token
@@ -22,6 +23,7 @@ export const seedInitialUsers = async () => {
         fullName: 'ALEAP Head Office Admin',
         email: 'admin@aleap.org',
         password: 'admin123',
+        role: 'Admin',
         status: 'Active',
       });
       console.log('Seeded default admin: admin@aleap.org / admin123');
@@ -105,6 +107,7 @@ export const adminLogin = async (req, res) => {
         fullName: admin.fullName,
         email: admin.email,
         role: 'Admin',
+        authority: admin.role,
       },
     });
   } catch (err) {
@@ -316,13 +319,17 @@ export const registerCounsellor = async (req, res) => {
 // @route   POST /api/auth/admin/register
 // @access  Private/Admin
 export const registerAdmin = async (req, res) => {
-  const { fullName, email, password } = req.body;
+  const { fullName, email, password, role = 'Admin' } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ success: false, message: 'Please provide all details' });
   }
 
   if (password.length < 8) {
     return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
+  }
+
+  if (!['Admin', 'Manager'].includes(role)) {
+    return res.status(400).json({ success: false, message: 'Authority must be Admin or Manager.' });
   }
 
   try {
@@ -354,6 +361,7 @@ export const registerAdmin = async (req, res) => {
       fullName,
       email: email.toLowerCase(),
       password,
+      role,
       status: 'Active',
     });
 
@@ -362,7 +370,7 @@ export const registerAdmin = async (req, res) => {
       action: 'REGISTER_ADMIN',
       entity: 'Admin',
       entityId: admin.id,
-      details: { fullName, email: admin.email }
+      details: { fullName, email: admin.email, role: admin.role }
     });
 
     res.status(201).json({
@@ -372,6 +380,7 @@ export const registerAdmin = async (req, res) => {
         id: admin.id,
         fullName: admin.fullName,
         email: admin.email,
+        role: admin.role,
         status: admin.status,
       },
     });
@@ -391,6 +400,7 @@ export const getMe = async (req, res) => {
         id: req.user.id,
         fullName: req.user.fullName,
         role: req.role,
+        authority: req.user.role,
         email: req.user.email,
         mobileNumber: req.user.mobileNumber,
         district: req.user.district,
@@ -410,7 +420,15 @@ export const getCounsellors = async (req, res) => {
       attributes: { exclude: ['password'] },
       order: [['fullName', 'ASC']],
     });
-    res.json({ success: true, count: list.length, counsellors: list });
+
+    const counsellors = await Promise.all(
+      list.map(async (c) => {
+        const beneficiaryCount = await Beneficiary.count({ where: { assignedCounsellorId: c.id } });
+        return { ...c.toJSON(), beneficiaryCount };
+      })
+    );
+
+    res.json({ success: true, count: counsellors.length, counsellors });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -537,7 +555,7 @@ export const updateAdmin = async (req, res) => {
       action: 'UPDATE_ADMIN',
       entity: 'Admin',
       entityId: admin.id,
-      details: { fullName, email: admin.email, status }
+      details: { fullName, email: admin.email, status, role: admin.role }
     });
 
     res.json({
@@ -547,6 +565,7 @@ export const updateAdmin = async (req, res) => {
         id: admin.id,
         fullName: admin.fullName,
         email: admin.email,
+        role: admin.role,
         status: admin.status,
       },
     });

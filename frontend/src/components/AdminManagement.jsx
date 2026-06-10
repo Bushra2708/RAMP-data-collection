@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { 
+import {
   Shield, 
   UserPlus, 
   Search, 
@@ -13,6 +13,7 @@ import {
   ShieldAlert 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import DashboardModal from './common/DashboardModal';
 
 export default function AdminManagement() {
   const { API_BASE, getHeaders, user } = useApp();
@@ -32,6 +33,7 @@ export default function AdminManagement() {
   const [addForm, setAddForm] = useState({
     fullName: '',
     email: '',
+    role: 'Manager',
     password: '',
     confirmPassword: ''
   });
@@ -40,6 +42,7 @@ export default function AdminManagement() {
     id: '',
     fullName: '',
     email: '',
+    role: 'Admin',
     status: 'Active'
   });
 
@@ -87,6 +90,7 @@ export default function AdminManagement() {
         body: JSON.stringify({
           fullName: addForm.fullName,
           email: addForm.email,
+          role: addForm.role,
           password: addForm.password
         })
       });
@@ -97,6 +101,7 @@ export default function AdminManagement() {
         setAddForm({
           fullName: '',
           email: '',
+          role: 'Manager',
           password: '',
           confirmPassword: ''
         });
@@ -114,6 +119,7 @@ export default function AdminManagement() {
       id: adminUser.id,
       fullName: adminUser.fullName,
       email: adminUser.email,
+      role: adminUser.role || 'Admin',
       status: adminUser.status || 'Active'
     });
     setShowEditModal(true);
@@ -273,7 +279,7 @@ export default function AdminManagement() {
                   <tr key={a.id} className="hover:bg-white/5 transition-colors">
                     <td className="p-4 font-semibold text-white">{a.fullName}</td>
                     <td className="p-4 font-mono">{a.email}</td>
-                    <td className="p-4 text-slate-400">System Admin</td>
+                    <td className="p-4 text-slate-400">{a.role || 'Admin'}</td>
                     <td className="p-4">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                         (a.status || 'Active') === 'Active' 
@@ -326,17 +332,8 @@ export default function AdminManagement() {
 
       {/* ADD ADMIN MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
-            <div className="bg-slate-955 p-5 border-b border-white/5 flex items-center justify-between">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-teal-400" /> Register Admin Account
-              </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
+        <DashboardModal title="Register Admin Account" onClose={() => setShowAddModal(false)}>
+            <form onSubmit={handleAddSubmit} className="p-2 sm:p-6 space-y-4">
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Full Name *</label>
                 <input
@@ -358,6 +355,17 @@ export default function AdminManagement() {
                   onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
                   className="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
                 />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Authority *</label>
+                <select
+                  value={addForm.role}
+                  onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-slate-300 focus:outline-none focus:border-teal-500"
+                >
+                  <option value="Manager">Manager</option>
+                  <option value="Admin">Admin</option>
+                </select>
               </div>
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Password *</label>
@@ -398,23 +406,13 @@ export default function AdminManagement() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DashboardModal>
       )}
 
       {/* EDIT ADMIN MODAL */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
-            <div className="bg-slate-955 p-5 border-b border-white/5 flex items-center justify-between">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-teal-400" /> Edit Admin Profile
-              </h3>
-              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+        <DashboardModal title="Edit Admin Profile" onClose={() => setShowEditModal(false)}>
+            <form onSubmit={handleEditSubmit} className="p-2 sm:p-6 space-y-4">
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Full Name *</label>
                 <input
@@ -434,6 +432,16 @@ export default function AdminManagement() {
                   onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
                   className="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
                 />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Authority</label>
+                <input
+                  type="text"
+                  value={editForm.role}
+                  disabled
+                  className="w-full bg-slate-950/60 border border-white/5 rounded-lg p-2.5 text-xs text-slate-500 cursor-not-allowed"
+                />
+                <p className="text-[9px] text-slate-500 mt-1">Authority is locked after account creation.</p>
               </div>
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Status *</label>
@@ -467,14 +475,13 @@ export default function AdminManagement() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DashboardModal>
       )}
 
       {/* PASSWORD RESET SUCCESS MODAL */}
       {showResetSuccessModal && resetResult && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-2xl p-6 shadow-2xl text-center space-y-4 animate-scale-up">
+        <DashboardModal title="Temporary Password Generated" onClose={() => { setShowResetSuccessModal(false); setResetResult(null); }}>
+          <div className="mx-auto max-w-md p-2 sm:p-6 text-center space-y-4">
             <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center rounded-full mx-auto">
               <ShieldAlert className="w-6 h-6" />
             </div>
@@ -503,7 +510,7 @@ export default function AdminManagement() {
               Done
             </button>
           </div>
-        </div>
+        </DashboardModal>
       )}
     </div>
   );

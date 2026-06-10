@@ -1,12 +1,6 @@
 import MasterData from '../models/MasterData.js';
 
-// Seed initial master data if empty
-export const seedInitialMasterData = async () => {
-  try {
-    const count = await MasterData.count();
-    if (count > 0) return; // Master data already seeded
-
-    const defaults = [
+const MASTER_DATA_DEFAULTS = [
       {
         category: 'districts',
         items: [
@@ -128,10 +122,27 @@ export const seedInitialMasterData = async () => {
       },
     ];
 
-    for (const d of defaults) {
-      await MasterData.create(d);
+// Seed initial master data and backfill any missing categories (e.g. esdpBatches)
+export const seedInitialMasterData = async () => {
+  try {
+    const existing = await MasterData.findAll({ attributes: ['category'] });
+    const existingCategories = new Set(existing.map((row) => row.category));
+    const missing = MASTER_DATA_DEFAULTS.filter((d) => !existingCategories.has(d.category));
+
+    if (existing.length === 0) {
+      for (const d of MASTER_DATA_DEFAULTS) {
+        await MasterData.create(d);
+      }
+      console.log('Master data successfully seeded.');
+      return;
     }
-    console.log('Master data successfully seeded.');
+
+    if (missing.length > 0) {
+      for (const d of missing) {
+        await MasterData.create(d);
+      }
+      console.log(`Master data backfilled missing categories: ${missing.map((d) => d.category).join(', ')}`);
+    }
   } catch (err) {
     console.error('Error seeding master data:', err.message);
   }

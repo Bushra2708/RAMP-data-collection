@@ -20,7 +20,6 @@ const cloudinaryStorage = {
         folder: 'rbhms_documents',
         resource_type: 'auto', // handles images AND PDFs/raw files
         allowed_formats: ['pdf', 'jpg', 'jpeg', 'png'],
-        transformation: [{ quality: 'auto' }],
       },
       (error, result) => {
         if (error) {
@@ -37,6 +36,8 @@ const cloudinaryStorage = {
         cb(null, {
           path: result.secure_url,      // full Cloudinary HTTPS URL
           filename: result.public_id,  // public_id used for deletion
+          originalname: file.originalname,
+          mimetype: file.mimetype,
           size: result.bytes,
           original_filename: result.original_filename,
           format: result.format,

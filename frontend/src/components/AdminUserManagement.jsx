@@ -14,6 +14,7 @@ import {
   ShieldAlert 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import DashboardModal from './common/DashboardModal';
 
 export default function AdminUserManagement() {
   const { API_BASE, getHeaders, masterData } = useApp();
@@ -297,6 +298,7 @@ export default function AdminUserManagement() {
                   <th className="p-4">Mobile Number</th>
                   <th className="p-4">Email</th>
                   <th className="p-4">District</th>
+                  <th className="p-4 text-center">Beneficiaries</th>
                   <th className="p-4">Status</th>
                   <th className="p-4">Created Date</th>
                   <th className="p-4 text-center">Actions</th>
@@ -309,6 +311,11 @@ export default function AdminUserManagement() {
                     <td className="p-4 font-mono">{c.mobileNumber}</td>
                     <td className="p-4 max-w-[180px] truncate">{c.email || <span className="text-slate-600">—</span>}</td>
                     <td className="p-4">{c.district}</td>
+                    <td className="p-4 text-center">
+                      <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 font-bold text-[11px]">
+                        {c.beneficiaryCount ?? 0}
+                      </span>
+                    </td>
                     <td className="p-4">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                         c.status === 'Active' 
@@ -357,17 +364,8 @@ export default function AdminUserManagement() {
 
       {/* ADD MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
-            <div className="bg-slate-955 p-5 border-b border-white/5 flex items-center justify-between">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-teal-400" /> Create Counsellor Account
-              </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
+        <DashboardModal title="Create Counsellor Account" onClose={() => setShowAddModal(false)}>
+          <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Full Name *</label>
@@ -456,23 +454,13 @@ export default function AdminUserManagement() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DashboardModal>
       )}
 
       {/* EDIT MODAL */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
-            <div className="bg-slate-955 p-5 border-b border-white/5 flex items-center justify-between">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-teal-400" /> Edit Counsellor Details
-              </h3>
-              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+        <DashboardModal title="Edit Counsellor Details" onClose={() => setShowEditModal(false)}>
+          <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-1">Full Name *</label>
@@ -554,32 +542,31 @@ export default function AdminUserManagement() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DashboardModal>
       )}
 
       {/* PASSWORD RESET SUCCESS MODAL */}
       {showResetSuccessModal && resetResult && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-2xl p-6 shadow-2xl text-center space-y-4 animate-scale-up">
-            <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center rounded-full mx-auto">
-              <ShieldAlert className="w-6 h-6" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-white">Temporary Password Generated</h4>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Password for <strong>{resetResult.name}</strong> has been reset. Please copy the temporary password below:
-              </p>
-            </div>
-
-            <div className="bg-slate-950 p-3.5 border border-white/10 rounded-xl font-mono text-base font-bold text-teal-400 tracking-wider select-all cursor-pointer">
-              {resetResult.tempPassword}
-            </div>
-
-            <p className="text-[9px] text-slate-500">
-              Note: Provide this temporary password to the counsellor. They should log in and update their password immediately.
+        <DashboardModal title="Temporary Password Generated" onClose={() => { setShowResetSuccessModal(false); setResetResult(null); }}>
+          <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center rounded-full mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="text-center mt-3">
+            <h4 className="text-sm font-bold text-white">Temporary Password Generated</h4>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Password for <strong>{resetResult.name}</strong> has been reset. Please copy the temporary password below:
             </p>
+          </div>
 
+          <div className="bg-slate-950 p-3.5 border border-white/10 rounded-xl font-mono text-base font-bold text-teal-400 tracking-wider select-all cursor-pointer mt-4">
+            {resetResult.tempPassword}
+          </div>
+
+          <p className="text-[9px] text-slate-500 mt-2">
+            Note: Provide this temporary password to the counsellor. They should log in and update their password immediately.
+          </p>
+
+          <div className="mt-4">
             <button
               onClick={() => {
                 setShowResetSuccessModal(false);
@@ -590,7 +577,7 @@ export default function AdminUserManagement() {
               Done
             </button>
           </div>
-        </div>
+        </DashboardModal>
       )}
     </div>
   );

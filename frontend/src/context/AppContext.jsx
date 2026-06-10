@@ -4,19 +4,21 @@ import toast from 'react-hot-toast';
 const AppContext = createContext();
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+
+const MASTER_DATA_DEFAULTS = {
+  districts: [],
+  mandals: [],
+  villages: [],
+  sectors: [],
+  esdpBatches: [],
+  supportCategories: [],
+};
 console.log("API_BASE:", API_BASE);
 export const AppProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('rbhms_token') || '');
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('rbhms_user') || 'null'));
   const [loading, setLoading] = useState(false);
-  const [masterData, setMasterData] = useState({
-    districts: [],
-    mandals: [],
-    villages: [],
-    sectors: [],
-    esdpBatches: [],
-    supportCategories: [],
-  });
+  const [masterData, setMasterData] = useState({ ...MASTER_DATA_DEFAULTS });
 
   // Simulation Toggle (for testing both role views on desktop)
   const [simulationMode, setSimulationMode] = useState(false); // true: simulate mobile counsellor view
@@ -39,7 +41,7 @@ export const AppProvider = ({ children }) => {
       const res = await fetch(`${API_BASE}/master-data`);
       const data = await res.json();
       if (data.success) {
-        setMasterData(data.data);
+        setMasterData({ ...MASTER_DATA_DEFAULTS, ...data.data });
       }
     } catch (err) {
       console.error('Error loading master data:', err);

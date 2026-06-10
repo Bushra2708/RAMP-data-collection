@@ -150,6 +150,15 @@ export default function BeneficiaryList() {
         {/* Action Buttons */}
         <div className="flex gap-2 flex-wrap justify-end">
           <button
+            onClick={() => fetchBeneficiaries(page)}
+            className="py-2 px-3 text-xs bg-slate-900 border border-white/5 text-slate-400 hover:text-white rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+            title="Refresh list"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+
+          <button
             onClick={() => setShowFilters(!showFilters)}
             className={`py-2 px-3 text-xs rounded-lg border flex items-center gap-1.5 transition-all cursor-pointer ${
               showFilters || hasActiveFilters
@@ -176,7 +185,7 @@ export default function BeneficiaryList() {
             className="py-2 px-3.5 text-xs bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors shadow-lg shadow-teal-500/20"
           >
             <PlusCircle className="w-4 h-4" />
-            <span className="hidden sm:inline">Register</span>
+            <span className="hidden sm:inline">Add Beneficiary</span>
             <span className="sm:hidden">New</span>
           </button>
         </div>
@@ -190,7 +199,7 @@ export default function BeneficiaryList() {
             <select value={filterDistrict} onChange={(e) => setFilterDistrict(e.target.value)}
               className="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-teal-500">
               <option value="">All Districts</option>
-              {masterData.districts.map((d, i) => <option key={i} value={d}>{d}</option>)}
+              {(masterData.districts || []).map((d, i) => <option key={i} value={d}>{d}</option>)}
             </select>
           </div>
           <div>
@@ -320,7 +329,11 @@ export default function BeneficiaryList() {
                       </td>
                       {user.role === 'Admin' && (
                         <td className="p-4 text-slate-400 text-[11px]">
-                          {b.assignedCounsellor ? b.assignedCounsellor.fullName : '—'}
+                          {b.assignedCounsellor ? (
+                            <span className="text-teal-400">{b.assignedCounsellor.fullName}</span>
+                          ) : (
+                            <span className="text-slate-600 italic">Unassigned</span>
+                          )}
                         </td>
                       )}
                       <td className="p-4 text-center">

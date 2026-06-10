@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+body.dashboard-modal-open .modal-blur-when-open {
+  filter: blur(8px);
+  opacity: 0.55;
+  pointer-events: none;
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
 @layer base {
   body {
     @apply bg-slate-900 text-slate-100 font-sans antialiased min-h-screen selection:bg-teal-500 selection:text-slate-900;
@@ -64,6 +71,27 @@
   border-color: rgba(20, 184, 166, 0.3);
   transform: translateY(-2px);
   box-shadow: 0 10px 20px -10px rgba(0, 0, 0, 0.5);
+}
+
+.panel-compact {
+  max-height: calc(100vh - 180px);
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.5) rgba(15, 23, 42, 0.5);
+}
+
+.panel-compact::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-compact::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.panel-compact::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 9999px;
 }
 
 .glow-teal {

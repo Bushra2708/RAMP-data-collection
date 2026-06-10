@@ -1,4 +1,5 @@
 import { Op } from 'sequelize';
+import sequelize from '../config/db.js';
 import Beneficiary from '../models/Beneficiary.js';
 import Counsellor from '../models/Counsellor.js';
 import Activity from '../models/Activity.js';
@@ -8,6 +9,7 @@ import Activity from '../models/Activity.js';
 // @access  Private/Admin
 export const getReportData = async (req, res) => {
   const { reportType } = req.params;
+  const { scheme } = req.query;
 
   try {
     let reportData = [];
@@ -63,8 +65,8 @@ export const getReportData = async (req, res) => {
         const esdpList = await Beneficiary.findAll({
           where: {
             [Op.and]: [
-              { 'esdpTraining.batchNumber': { [Op.ne]: null } },
-              { 'esdpTraining.batchNumber': { [Op.ne]: '' } },
+              sequelize.literal(`"Beneficiary"."esdpTraining"->>'batchNumber' IS NOT NULL`),
+              sequelize.literal(`"Beneficiary"."esdpTraining"->>'batchNumber' != ''`),
             ]
           }
         });
@@ -86,10 +88,10 @@ export const getReportData = async (req, res) => {
         let completedUdyamSet = new Set();
         try {
           const udyamActivities = await Activity.findAll({
-            attributes: ['beneficiary_id'],
+            attributes: ['beneficiary'],
             where: { supportCategory: 'Udyam Registration', status: 'Completed' },
           });
-          completedUdyamSet = new Set(udyamActivities.map(a => String(a.beneficiary_id)));
+          completedUdyamSet = new Set(udyamActivities.map(a => String(a.beneficiary)));
         } catch (e) {
           console.error('Error fetching Udyam activities:', e.message);
         }
@@ -111,7 +113,7 @@ export const getReportData = async (req, res) => {
       case 'loan': {
         headers = ['Beneficiary ID', 'Full Name', 'Loan Scheme', 'Amount Requested', 'Amount Sanctioned', 'Sanction Date', 'Release Date'];
         const loanList = await Beneficiary.findAll({
-          where: { 'loanTracking.loanApplied': 'Yes' }
+          where: sequelize.literal(`"Beneficiary"."loanTracking"->>'loanApplied' = 'Yes'`)
         });
         reportData = loanList.map(b => [
           b.beneficiaryId || '',
@@ -126,9 +128,10 @@ export const getReportData = async (req, res) => {
       }
 
       case 'scheme': {
-        headers = ['Beneficiary ID', 'Full Name', 'PMEGP Status', 'PMMY Status', 'PM Vishwakarma Status', 'PMFME Status', 'CGTMSE Status'];
+        const selectedSchemes = scheme && scheme !== 'all' ? [scheme] : ['PMEGP', 'PMMY', 'PM Vishwakarma', 'PMFME', 'CGTMSE'];
+        headers = ['Beneficiary ID', 'Full Name', ...selectedSchemes.map(s => `${s} Status`)];
         const schemeList = await Beneficiary.findAll();
-        const schemeCategories = ['PMEGP', 'PMMY', 'PM Vishwakarma', 'PMFME', 'CGTMSE'];
+        const schemeCategories = selectedSchemes;
         let statusMap = {};
         try {
           const activities = await Activity.findAll({
@@ -136,7 +139,7 @@ export const getReportData = async (req, res) => {
             raw: true,
           });
           activities.forEach(a => {
-            const bId = String(a.beneficiary_id);
+            const bId = String(a.beneficiary);
             if (!statusMap[bId]) statusMap[bId] = {};
             statusMap[bId][a.supportCategory] = a.status || 'Not Started';
           });
@@ -149,11 +152,7 @@ export const getReportData = async (req, res) => {
           return [
             b.beneficiaryId || '',
             b.personalInfo?.fullName || '',
-            getStatus('PMEGP'),
-            getStatus('PMMY'),
-            getStatus('PM Vishwakarma'),
-            getStatus('PMFME'),
-            getStatus('CGTMSE'),
+            ...selectedSchemes.map(getStatus),
           ];
         });
         break;
@@ -179,8 +178,8 @@ export const getReportData = async (req, res) => {
         const entList = await Beneficiary.findAll({
           where: {
             [Op.and]: [
-              { 'entrepreneurProfile.enterpriseName': { [Op.ne]: null } },
-              { 'entrepreneurProfile.enterpriseName': { [Op.ne]: '' } },
+              sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'enterpriseName' IS NOT NULL`),
+              sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'enterpriseName' != ''`),
             ]
           }
         });
@@ -197,7 +196,7 @@ export const getReportData = async (req, res) => {
       }
 
       case 'counsellor-performance': {
-        headers = ['Counsellor Name', 'District', 'Mobile Number', 'Status', 'Beneficiaries Registered', 'Activities Logged'];
+        headers = ['Counsellor Name', 'District', 'Mobile Number', 'Status', 'Beneficiaries Registered', 'Activities Logged', 'Entrepreneurs Established'];
         let counsellors = [];
         try {
           counsellors = await Counsellor.findAll();
@@ -208,9 +207,19 @@ export const getReportData = async (req, res) => {
         for (const c of counsellors) {
           let regCount = 0;
           let actCount = 0;
+          let establishedCount = 0;
           try {
             regCount = await Beneficiary.count({ where: { assignedCounsellorId: c.id } });
-            actCount = await Activity.count({ where: { counsellor_id: c.id } });
+            actCount = await Activity.count({ where: { counsellorId: c.id } });
+            establishedCount = await Beneficiary.count({
+              where: {
+                assignedCounsellorId: c.id,
+                [Op.and]: [
+                  sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'enterpriseName' IS NOT NULL`),
+                  sequelize.literal(`"Beneficiary"."entrepreneurProfile"->>'enterpriseName' != ''`),
+                ],
+              },
+            });
           } catch (e) {
             console.error(`Error counting for counsellor ${c.fullName}:`, e.message);
           }
@@ -221,6 +230,7 @@ export const getReportData = async (req, res) => {
             c.status || 'Unknown',
             regCount,
             actCount,
+            establishedCount,
           ]);
         }
         reportData = performanceData;

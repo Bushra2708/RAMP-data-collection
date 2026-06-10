@@ -21,26 +21,6 @@ import './models/BeneficiaryDocument.js';
 import './models/AuditLog.js';
 import { initBackupScheduler } from './config/backupWorker.js';
 
-// Connect to Database and Bootstrap tables/seeding
-connectDB().then(async () => {
-  try {
-    // Sync database tables with defined schemas
-    await sequelize.sync({ alter: true });
-    console.log('PostgreSQL database synced successfully.');
-
-    // Proactively seed initial database parameters once connected
-    const { seedInitialUsers } = await import('./controllers/authController.js');
-    const { seedInitialMasterData } = await import('./controllers/masterDataController.js');
-    await seedInitialUsers();
-    await seedInitialMasterData();
-
-    // Start weekly backup scheduler
-    initBackupScheduler();
-  } catch (err) {
-    console.error('Error during database bootstrap:', err.message);
-  }
-});
-
 const app = express();
 app.set('trust proxy', 1);
 
@@ -61,8 +41,10 @@ app.use('/api/', limiter);
 // Strict CORS Configuration
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  process.env.CLIENT_URL,
   'https://ramp-data-collection.vercel.app'
-];
+].filter(Boolean);
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -113,6 +95,47 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server executing in development on port ${PORT}`);
-});
+
+const startServer = async () => {
+  try {
+    await connectDB();
+    await sequelize.sync({ alter: process.env.NODE_ENV !== 'production' });
+    console.log('PostgreSQL database synced successfully.');
+
+    const { seedInitialUsers } = await import('./controllers/authController.js');
+    const { seedInitialMasterData } = await import('./controllers/masterDataController.js');
+    await seedInitialUsers();
+    await seedInitialMasterData();
+    initBackupScheduler();
+
+    const server = app.listen(PORT);
+
+    server.on('listening', () => {
+      console.log(`Server executing in development on port ${PORT}`);
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Stop the other backend process or set a different PORT in .env`);
+      } else {
+        console.error('Server failed to start:', err.message);
+      }
+      process.exit(1);
+    });
+
+    const shutdown = () => {
+      server.close(() => process.exit(0));
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+  } catch (err) {
+    console.error('Error during database bootstrap:', err.message);
+    if (err.original?.code === 'ETIMEDOUT' || err.name === 'SequelizeConnectionError') {
+      console.error('Database connection timed out. Check your internet connection and DATABASE_URL in backend/.env');
+      console.error('Neon databases may need a moment to wake up — save any file to let nodemon retry.');
+    }
+    process.exit(1);
+  }
+};
+
+startServer();

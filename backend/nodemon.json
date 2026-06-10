@@ -1,0 +1,4 @@
+{
+  "delay": 1500,
+  "ignore": ["backups/*", "upload/*", "scripts/*", "*.log"]
+}

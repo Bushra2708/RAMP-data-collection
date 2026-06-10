@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Layers, Plus, Trash, Save, GraduationCap, Download, Database, RefreshCw } from 'lucide-react';
+import { Layers, Plus, Trash, Save, GraduationCap, Download, Database, RefreshCw, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 export default function MasterDataPanel() {
   const { masterData, fetchMasterData, API_BASE, getHeaders } = useApp();
@@ -103,6 +104,8 @@ export default function MasterDataPanel() {
       if (data.success) {
         toast.success('Master data configuration saved.');
         fetchMasterData();
+      } else {
+        toast.error(data.message || 'Failed to update master data.');
       }
     } catch (err) {
       toast.error('Failed to update master data.');
@@ -143,6 +146,53 @@ export default function MasterDataPanel() {
     });
   };
 
+  const getExcelValue = (row, names) => {
+    const normalized = Object.fromEntries(
+      Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value])
+    );
+    for (const name of names) {
+      const value = normalized[name.toLowerCase()];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return '';
+  };
+
+  const handleEsdpExcelUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      const parsed = rows.map((row) => ({
+        batchNumber: getExcelValue(row, ['batchNumber', 'Batch Number', 'Batch Code', 'Batch Code ID']),
+        batchName: getExcelValue(row, ['batchName', 'Batch Name', 'Course Name', 'Batch Course Name']),
+        district: getExcelValue(row, ['district', 'Venue District']),
+        venue: getExcelValue(row, ['venue', 'Venue', 'Venue Address', 'Venue Full Address']),
+        startDate: getExcelValue(row, ['startDate', 'Start Date']),
+        endDate: getExcelValue(row, ['endDate', 'End Date']),
+      })).filter((batch) => batch.batchNumber && batch.batchName && batch.district && batch.venue);
+
+      if (parsed.length === 0) {
+        return toast.error('No valid ESDP batches found. Required columns: Batch Number, Batch Name, District, Venue.');
+      }
+
+      const existing = masterData.esdpBatches || [];
+      const mergedMap = new Map(existing.map((batch) => [batch.batchNumber, batch]));
+      parsed.forEach((batch) => mergedMap.set(batch.batchNumber, batch));
+      await handleSaveList('esdpBatches', Array.from(mergedMap.values()));
+      toast.success(`${parsed.length} ESDP batch rows imported.`);
+    } catch (err) {
+      toast.error('Unable to read Excel file. Please upload a valid .xlsx or .csv file.');
+    }
+  };
+
   const handleDeleteItem = (indexToDelete) => {
     if (!window.confirm('Are you sure you want to delete this configuration item?')) return;
     const currentList = masterData[activeTab] || [];
@@ -155,7 +205,7 @@ export default function MasterDataPanel() {
   const inactiveTabClass = 'text-slate-400 hover:text-slate-200 hover:bg-white/5';
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-fade-in">
+    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-fade-in panel-compact">
 
       {/* Sidebar Controls */}
       <div className="md:col-span-3 space-y-2">
@@ -231,7 +281,19 @@ export default function MasterDataPanel() {
             </form>
           ) : (
             <form onSubmit={handleAddBatchItem} className="p-4 bg-slate-950/40 border border-white/5 rounded-xl space-y-4">
-              <h5 className="text-xs font-bold text-teal-400 flex items-center gap-1"><GraduationCap className="w-4 h-4" /> Schedule New ESDP Batch</h5>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h5 className="text-xs font-bold text-teal-400 flex items-center gap-1"><GraduationCap className="w-4 h-4" /> Schedule New ESDP Batch</h5>
+                <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-teal-500/40 hover:text-teal-300">
+                  <Upload className="h-3.5 w-3.5" />
+                  Upload Excel
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleEsdpExcelUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] text-slate-400 mb-1">Batch Code ID *</label>

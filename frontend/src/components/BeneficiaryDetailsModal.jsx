@@ -19,6 +19,33 @@ import {
   Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import DashboardModal from './common/DashboardModal';
+
+const resolveFileUrl = (API_BASE, filePath, documentUrl) => {
+  const rawUrl = documentUrl || filePath;
+  if (!rawUrl) return '#';
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+
+  const apiRoot = API_BASE.replace(/\/api\/?$/, '');
+  const normalizedPath = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+  return `${apiRoot}${normalizedPath}`;
+};
+
+const downloadFile = async (url, filename) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error('Download failed');
+  }
+  const blob = await res.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename || 'document';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+};
 
 const FileSlotUpload = ({ label, slotKey, beneficiaryId, files, API_BASE, getHeaders, onUploadSuccess }) => {
   const [uploading, setUploading] = useState(false);
@@ -56,6 +83,17 @@ const FileSlotUpload = ({ label, slotKey, beneficiaryId, files, API_BASE, getHea
   };
 
   const fileData = files?.[slotKey];
+  const fileUrl = fileData?.path ? resolveFileUrl(API_BASE, fileData.path, fileData.documentUrl) : '';
+  const fileName = fileData?.originalFilename || fileData?.name || label;
+
+  const handleDownload = async () => {
+    try {
+      await downloadFile(fileUrl, fileName);
+    } catch (err) {
+      toast.error('Download failed. Opening file in a new tab.');
+      window.open(fileUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   return (
     <div className="bg-slate-950/40 p-3 rounded-lg border border-white/5 flex flex-col justify-between gap-2">
@@ -69,15 +107,14 @@ const FileSlotUpload = ({ label, slotKey, beneficiaryId, files, API_BASE, getHea
       {fileData?.path ? (
         <div className="flex flex-col gap-2 mt-1">
           <div className="flex items-center justify-between gap-2">
-            <a
-              href={fileData.path.startsWith('http') ? fileData.path : `${API_BASE}${fileData.path}`}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={handleDownload}
               className="text-xs text-teal-400 hover:underline truncate max-w-[150px]"
-              title="Click to view file"
+              title="Download file"
             >
-              View File
-            </a>
+              Download File
+            </button>
             <button
               type="button"
               onClick={() => fileRef.current.click()}
@@ -87,7 +124,7 @@ const FileSlotUpload = ({ label, slotKey, beneficiaryId, files, API_BASE, getHea
               {uploading ? 'Uploading...' : 'Replace'}
             </button>
           </div>
-          <p className="text-[10px] text-slate-400 truncate max-w-[250px]">{fileData.originalFilename || fileData.name || label}</p>
+          <p className="text-[10px] text-slate-400 truncate max-w-[250px]">{fileName}</p>
         </div>
       ) : (
         <div className="mt-1">
@@ -137,6 +174,18 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
   // Edit details toggle
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState(null);
+  const [counsellors, setCounsellors] = useState([]);
+
+  const fetchCounsellors = async () => {
+    if (user.role !== 'Admin') return;
+    try {
+      const res = await fetch(`${API_BASE}/auth/counsellors`, { headers: getHeaders() });
+      const data = await res.json();
+      if (data.success) setCounsellors(data.counsellors);
+    } catch (err) {
+      console.error('Error fetching counsellors:', err);
+    }
+  };
 
   const fetchDetails = async () => {
     try {
@@ -183,7 +232,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
       });
       return;
     }
-    const selectedBatch = masterData.esdpBatches.find(b => b.batchNumber === batchNo);
+    const selectedBatch = (masterData.esdpBatches || []).find(b => b.batchNumber === batchNo);
     if (selectedBatch) {
       setEditData({
         ...editData,
@@ -202,25 +251,35 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
     }
   };
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
+  // body scroll lock handled by DashboardModal wrapper
 
   useEffect(() => {
     fetchDetails();
+    fetchCounsellors();
   }, [id]);
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const payload = {
+        personalInfo: editData.personalInfo,
+        esdpTraining: editData.esdpTraining,
+        entrepreneurProfile: editData.entrepreneurProfile,
+        dprTracking: editData.dprTracking,
+        loanTracking: editData.loanTracking,
+        compliance: editData.compliance,
+        marketAccess: editData.marketAccess,
+        certifications: editData.certifications,
+      };
+      if (user.role === 'Admin') {
+        payload.assignedCounsellorId = editData.assignedCounsellorId || null;
+      }
+
       const res = await fetch(`${API_BASE}/beneficiary/${id}`, {
         method: 'PUT',
         headers: getHeaders(),
-        body: JSON.stringify(editData),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.success) {
@@ -260,6 +319,8 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
           remarks: '',
           nextFollowUpDate: '',
         });
+      } else {
+        toast.error(data.message || 'Unable to save activity.');
       }
     } catch (err) {
       toast.error('Connection error.');
@@ -322,12 +383,12 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
 
   if (loading && !beneficiary) {
     return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-        <div className="bg-slate-900 border border-white/10 w-full max-w-lg rounded-2xl p-6 flex flex-col items-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500 mb-2"></div>
+      <DashboardModal title="Loading Beneficiary" description="Please wait while we fetch the beneficiary profile." onClose={onClose}>
+        <div className="flex flex-col items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500 mb-4"></div>
           <span className="text-xs text-slate-400">Loading Beneficiary Profile...</span>
         </div>
-      </div>
+      </DashboardModal>
     );
   }
 
@@ -344,50 +405,12 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
   const inactiveTabClass = 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5';
 
   return (
-    <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4"
-      onClick={onClose}
-    >
-      <div 
-        className="bg-slate-900 border border-white/10 w-full max-w-[95vw] md:max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-fade-in overflow-hidden mx-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        
-        {/* Header Section */}
-        <div className="p-5 border-b border-white/5 bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-white">{beneficiary.personalInfo?.fullName}</h3>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-500/10 text-teal-400">
-                {beneficiary.beneficiaryId}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Mobile: {beneficiary.personalInfo?.mobileNumber} | Location: {beneficiary.personalInfo?.village}, {beneficiary.personalInfo?.district}
-            </p>
-          </div>
-          <div className="flex gap-2 items-center">
-            {!isEditing && (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="py-1.5 px-3 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-lg text-xs cursor-pointer transition-all"
-              >
-                Edit Profile Details
-              </button>
-            )}
-            <button 
-              onClick={onClose} 
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 cursor-pointer flex items-center gap-1 border border-white/15 px-2 bg-slate-950/40"
-              title="Close Panel"
-            >
-              <span className="text-xs font-semibold">Close</span>
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+    <DashboardModal title={beneficiary.personalInfo?.fullName || 'Beneficiary Details'} description={`ID: ${beneficiary?.beneficiaryId || ''}`} onClose={onClose}>
+      {/* Header and actions rendered by DashboardModal header */}
 
-        {/* Dynamic Horizontal Tabs */}
-        <div className="flex border-b border-white/5 overflow-x-auto bg-slate-950/20 no-print">
+      <div className="flex flex-col">
+        {/* Horizontal Tabs */}
+        <div className="flex border-b border-white/5 overflow-x-auto bg-[#081225]/20 no-print">
           {tabItems.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -408,16 +431,49 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
           })}
         </div>
 
-        {/* Modal Content Scrollable Area */}
-        <div className="flex-grow overflow-y-auto p-6">
-          
-          {/* EDIT PROFILE VIEW */}
-          {isEditing && (
-            <form onSubmit={handleUpdateProfile} className="space-y-6 animate-fade-in pb-12">
-              
-              {/* 1. Personal & Contact details */}
-              <div className="bg-slate-950/20 p-4 border border-white/5 rounded-xl space-y-4">
-                <h4 className="text-xs font-bold text-teal-400 uppercase tracking-wider">1. Personal & Contact Details</h4>
+        {/* Modal Content Scrollable Area inside DashboardModal */}
+        <div className="flex-grow">
+          <div className="p-6">
+            <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print">
+              {user.role === 'Admin' && !isEditing && (
+                <p className="text-xs text-slate-400">
+                  Assigned Counsellor:{' '}
+                  <span className="text-teal-400 font-semibold">
+                    {beneficiary.assignedCounsellor?.fullName || 'Unassigned'}
+                  </span>
+                </p>
+              )}
+              {!isEditing && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="rounded-lg bg-teal-500 px-4 py-2 text-xs font-bold text-slate-950 transition-colors hover:bg-teal-400 self-end sm:self-auto"
+                >
+                  Edit Profile Details
+                </button>
+              )}
+            </div>
+            {/* EDIT PROFILE VIEW */}
+            {isEditing && (
+              <form onSubmit={handleUpdateProfile} className="space-y-6 animate-fade-in pb-12">
+                {user.role === 'Admin' && (
+                  <div className="bg-slate-950/20 p-4 border border-white/5 rounded-xl space-y-3">
+                    <h4 className="text-xs font-bold text-teal-400 uppercase tracking-wider">Counsellor Assignment</h4>
+                    <select
+                      value={editData.assignedCounsellorId || ''}
+                      onChange={(e) => setEditData({ ...editData, assignedCounsellorId: e.target.value || null })}
+                      className="w-full max-w-md bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-slate-300"
+                    >
+                      <option value="">Unassigned</option>
+                      {counsellors.map((c) => (
+                        <option key={c.id} value={c.id}>{c.fullName} ({c.district})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="bg-slate-950/20 p-4 border border-white/5 rounded-xl space-y-4">
+                  <h4 className="text-xs font-bold text-teal-400 uppercase tracking-wider">1. Personal & Contact Details</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] text-slate-400 mb-1 font-semibold">Full Name *</label>
@@ -607,7 +663,7 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                       className="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-slate-300"
                     >
                       <option value="">No Batch Allocation</option>
-                      {masterData.esdpBatches.map((b, i) => (
+                      {(masterData.esdpBatches || []).map((b, i) => (
                         <option key={i} value={b.batchNumber}>{b.batchName} ({b.batchNumber})</option>
                       ))}
                     </select>
@@ -665,7 +721,13 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                       value={editData.entrepreneurProfile.existingEntrepreneur || 'No'}
                       onChange={(e) => setEditData({
                         ...editData,
-                        entrepreneurProfile: { ...editData.entrepreneurProfile, existingEntrepreneur: e.target.value }
+                        entrepreneurProfile: {
+                          ...editData.entrepreneurProfile,
+                          existingEntrepreneur: e.target.value,
+                          interestedInBusinessExpansion: e.target.value === 'Yes'
+                            ? editData.entrepreneurProfile.interestedInBusinessExpansion
+                            : 'No',
+                        }
                       })}
                       className="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-slate-300"
                     >
@@ -687,23 +749,22 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                       <option value="No">No</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">Interested in Expansion?</label>
-                    <select
-                      value={editData.entrepreneurProfile.interestedInBusinessExpansion || 'No'}
-                      onChange={(e) => setEditData({
-                        ...editData,
-                        entrepreneurProfile: { ...editData.entrepreneurProfile, interestedInBusinessExpansion: e.target.value }
-                      })}
-                      className="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-slate-300"
-                    >
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-
                   {editData.entrepreneurProfile.existingEntrepreneur === 'Yes' && (
                     <>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Interested in Expansion?</label>
+                        <select
+                          value={editData.entrepreneurProfile.interestedInBusinessExpansion || 'No'}
+                          onChange={(e) => setEditData({
+                            ...editData,
+                            entrepreneurProfile: { ...editData.entrepreneurProfile, interestedInBusinessExpansion: e.target.value }
+                          })}
+                          className="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-slate-300"
+                        >
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                        </select>
+                      </div>
                       <div className="sm:col-span-2">
                         <label className="block text-[10px] text-slate-400 mb-1">Enterprise Name</label>
                         <input
@@ -1446,10 +1507,12 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                   <span className="block text-[10px] text-slate-500 uppercase">Interested in New Business?</span>
                   <p className="text-xs text-white font-bold mt-0.5">{beneficiary.entrepreneurProfile?.interestedInNewBusiness || 'Yes'}</p>
                 </div>
-                <div>
-                  <span className="block text-[10px] text-slate-500 uppercase">Interested in Expansion?</span>
-                  <p className="text-xs text-white font-bold mt-0.5">{beneficiary.entrepreneurProfile?.interestedInBusinessExpansion || 'No'}</p>
-                </div>
+                {beneficiary.entrepreneurProfile?.existingEntrepreneur === 'Yes' && (
+                  <div>
+                    <span className="block text-[10px] text-slate-500 uppercase">Interested in Expansion?</span>
+                    <p className="text-xs text-white font-bold mt-0.5">{beneficiary.entrepreneurProfile?.interestedInBusinessExpansion || 'No'}</p>
+                  </div>
+                )}
               </div>
 
               {beneficiary.entrepreneurProfile?.enterpriseName && (
@@ -1755,15 +1818,22 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
                       <span className="text-[10px] font-mono text-teal-400/80 block mt-1">Format: {d.format}</span>
                     </div>
                     <div className="flex gap-1">
-                      <a
-                        href={`http://localhost:5000${d.path}`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const fileUrl = resolveFileUrl(API_BASE, d.path, d.documentUrl);
+                          try {
+                            await downloadFile(fileUrl, d.original_filename || d.name);
+                          } catch (err) {
+                            toast.error('Download failed. Opening file in a new tab.');
+                            window.open(fileUrl, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
                         className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded"
                         title="Download Document"
                       >
                         <Download className="w-3.5 h-3.5" />
-                      </a>
+                      </button>
                       {user.role === 'Admin' && (
                         <button
                           onClick={() => handleDeleteDoc(d.id)}
@@ -1812,5 +1882,6 @@ export default function BeneficiaryDetailsModal({ id, onClose }) {
         </div>
       </div>
     </div>
+    </DashboardModal>
   );
 }

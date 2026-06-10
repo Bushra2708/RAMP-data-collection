@@ -9,6 +9,7 @@ export default function ReportCenter() {
   const [loading, setLoading] = useState(false);
   const [reportHeaders, setReportHeaders] = useState([]);
   const [reportRows, setReportRows] = useState([]);
+  const [schemeFilter, setSchemeFilter] = useState('all');
 
   const reportsList = [
     { id: 'beneficiary-master', label: 'Beneficiary Master Report' },
@@ -22,13 +23,18 @@ export default function ReportCenter() {
     { id: 'counsellor-performance', label: 'Counsellor Performance Analytics' },
   ];
 
-  const handleFetchReport = async (reportId) => {
+  const handleFetchReport = async (reportId, nextSchemeFilter = schemeFilter) => {
     setActiveReport(reportId);
     setLoading(true);
     setReportHeaders([]);
     setReportRows([]);
     try {
-      const res = await fetch(`${API_BASE}/reports/${reportId}`, {
+      const params = new URLSearchParams();
+      if (reportId === 'scheme' && nextSchemeFilter !== 'all') {
+        params.append('scheme', nextSchemeFilter);
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`${API_BASE}/reports/${reportId}${query}`, {
         headers: getHeaders(),
       });
       if (!res.ok) {
@@ -74,7 +80,7 @@ export default function ReportCenter() {
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-fade-in print:block">
+    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-fade-in panel-compact print:block">
       
       {/* Sidebar Report Picker */}
       <div className="md:col-span-3 space-y-2 no-print">
@@ -109,6 +115,24 @@ export default function ReportCenter() {
               </div>
 
               <div className="flex gap-2">
+                {activeReport === 'scheme' && (
+                  <select
+                    value={schemeFilter}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setSchemeFilter(nextValue);
+                      handleFetchReport('scheme', nextValue);
+                    }}
+                    className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-slate-300 outline-none focus:border-teal-500"
+                  >
+                    <option value="all">All Schemes</option>
+                    <option value="PMEGP">PMEGP</option>
+                    <option value="PMMY">PMMY</option>
+                    <option value="PM Vishwakarma">PM Vishwakarma</option>
+                    <option value="PMFME">PMFME</option>
+                    <option value="CGTMSE">CGTMSE</option>
+                  </select>
+                )}
                 <button
                   onClick={handlePrintReport}
                   className="py-1.5 px-3 bg-slate-950 border border-white/10 hover:bg-slate-900 text-slate-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"

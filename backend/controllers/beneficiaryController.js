@@ -8,6 +8,30 @@ import { storageType, deleteFile } from '../middleware/upload.js';
 import fs from 'fs';
 import path from 'path';
 import { logAudit } from '../middleware/auditLogger.js';
+import {
+  mapImportRow,
+  upsertBeneficiaryFromImport,
+  ensureEsdpBatchesFromImportRows,
+  IMPORT_TEMPLATE_HEADERS,
+} from '../utils/beneficiaryImport.js';
+
+/** Resolve a counsellor_id that exists in Counsellor table (avoids FK violations). */
+async function resolveActivityCounsellorId(req, beneficiary) {
+  if (req.role === 'Counsellor') {
+    const counsellor = await Counsellor.findByPk(req.user.id, { attributes: ['id'] });
+    if (!counsellor) {
+      throw new Error('Your counsellor profile could not be verified. Please log out and sign in again.');
+    }
+    return counsellor.id;
+  }
+
+  if (beneficiary.assignedCounsellorId) {
+    const assigned = await Counsellor.findByPk(beneficiary.assignedCounsellorId, { attributes: ['id'] });
+    if (assigned) return assigned.id;
+  }
+
+  return null;
+}
 
 // @desc    Register a new beneficiary
 // @route   POST /api/beneficiary
@@ -15,8 +39,8 @@ import { logAudit } from '../middleware/auditLogger.js';
 export const registerBeneficiary = async (req, res) => {
   const { personalInfo, esdpTraining, entrepreneurProfile } = req.body;
 
-  if (!personalInfo || !personalInfo.fullName || !personalInfo.mobileNumber) {
-    return res.status(400).json({ success: false, message: 'Full Name and Mobile Number are required.' });
+  if (!personalInfo || !personalInfo.fullName || !personalInfo.mobileNumber || !personalInfo.shgName) {
+    return res.status(400).json({ success: false, message: 'Full Name, Mobile Number, and SHG Name are required.' });
   }
 
   try {
@@ -153,12 +177,12 @@ export const getBeneficiaries = async (req, res) => {
     // Registration Status filters
     if (registrationStatus) {
       if (registrationStatus === 'Udyam Registered') {
-        const udyamActivities = await Activity.findAll({
-          attributes: ['beneficiary_id'],
-          where: { supportCategory: 'Udyam Registration', status: 'Completed' },
-          raw: true,
-        });
-        const udyamBeneficiaryIds = udyamActivities.map(a => a.beneficiary_id);
+        const [udyamRows] = await sequelize.query(`
+          SELECT DISTINCT beneficiary_id AS id
+          FROM "Activity"
+          WHERE "supportCategory" = 'Udyam Registration' AND status = 'Completed'
+        `);
+        const udyamBeneficiaryIds = udyamRows.map((row) => row.id);
         where.id = { [Op.in]: udyamBeneficiaryIds.length > 0 ? udyamBeneficiaryIds : ['00000000-0000-0000-0000-000000000000'] };
       }
       if (registrationStatus === 'GST Registered') {
@@ -243,17 +267,18 @@ export const getBeneficiaryById = async (req, res) => {
     }
 
     // Auth validation — counsellors can only see their own beneficiaries
-    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
+    if (req.role === 'Counsellor' && beneficiary.assignedCounsellorId
+      && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
       return res.status(403).json({ success: false, message: 'Not authorized to view this profile.' });
     }
 
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['createdAt', 'DESC']],
       }),
     ]);
@@ -278,14 +303,32 @@ export const updateBeneficiary = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Beneficiary not found.' });
     }
 
-    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
-      return res.status(403).json({ success: false, message: 'Not authorized to update this profile.' });
+    if (req.role === 'Counsellor') {
+      if (beneficiary.assignedCounsellorId && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
+        return res.status(403).json({ success: false, message: 'Not authorized to update this profile.' });
+      }
+      if (!beneficiary.assignedCounsellorId) {
+        beneficiary.assignedCounsellorId = req.user.id;
+      }
     }
 
     const {
       personalInfo, esdpTraining, entrepreneurProfile,
       dprTracking, loanTracking, compliance, marketAccess, certifications,
+      assignedCounsellorId,
     } = req.body;
+
+    if (req.role === 'Admin' && assignedCounsellorId !== undefined) {
+      if (!assignedCounsellorId) {
+        beneficiary.assignedCounsellorId = null;
+      } else {
+        const counsellor = await Counsellor.findByPk(assignedCounsellorId, { attributes: ['id'] });
+        if (!counsellor) {
+          return res.status(400).json({ success: false, message: 'Selected counsellor not found.' });
+        }
+        beneficiary.assignedCounsellorId = counsellor.id;
+      }
+    }
 
     const timelineEvents = [];
 
@@ -384,11 +427,11 @@ export const updateBeneficiary = async (req, res) => {
 
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['createdAt', 'DESC']],
       }),
     ]);
@@ -419,15 +462,18 @@ export const addActivity = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Beneficiary not found.' });
     }
 
-    if (req.role === 'Counsellor' && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
+    if (req.role === 'Counsellor' && beneficiary.assignedCounsellorId
+      && String(beneficiary.assignedCounsellorId) !== String(req.user.id)) {
       return res.status(403).json({ success: false, message: 'Not authorized.' });
     }
 
+    const counsellorId = await resolveActivityCounsellorId(req, beneficiary);
+
     await Activity.create({
-      beneficiary_id: req.params.id,
+      beneficiary: req.params.id,
       activityDate: activityDate || new Date(),
       counsellorName: req.user.fullName,
-      counsellorId: req.user.id,
+      counsellorId,
       supportCategory,
       description,
       status: status || 'Not Started',
@@ -469,11 +515,11 @@ export const addActivity = async (req, res) => {
 
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['createdAt', 'DESC']],
       }),
     ]);
@@ -484,7 +530,12 @@ export const addActivity = async (req, res) => {
 
     res.json({ success: true, message: 'Handholding activity logged.', beneficiary: fullProfile });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    const isFkError = err.name === 'SequelizeForeignKeyConstraintError'
+      || /foreign key constraint/i.test(err.message);
+    const message = isFkError
+      ? 'Could not link this activity to a counsellor record. Please log out, sign in again, or ask an admin to reassign the beneficiary counsellor.'
+      : err.message;
+    res.status(500).json({ success: false, message });
   }
 };
 
@@ -537,7 +588,7 @@ export const uploadDocument = async (req, res) => {
       documentUrl = req.file.path;
       originalFilename = req.file.originalname || req.file.original_filename || req.file.originalFilename;
       fileType = req.file.mimetype || req.file.resource_type || 'application/octet-stream';
-      format = path.extname(req.file.originalname).substring(1).toUpperCase() || 'FILE';
+      format = path.extname(originalFilename || '').substring(1).toUpperCase() || (req.file.format || 'FILE').toUpperCase();
     } else {
       docPath = `/upload/${req.file.filename}`;
       publicId = null;
@@ -604,11 +655,11 @@ export const uploadDocument = async (req, res) => {
 
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['createdAt', 'DESC']],
       }),
     ]);
@@ -637,7 +688,7 @@ export const deleteDocument = async (req, res) => {
     }
 
     const doc = await BeneficiaryDocument.findOne({
-      where: { id: req.params.docId, beneficiary_id: req.params.id }
+      where: { id: req.params.docId, beneficiary: req.params.id }
     });
     if (!doc) {
       return res.status(404).json({ success: false, message: 'Document entry not found in profile.' });
@@ -672,11 +723,11 @@ export const deleteDocument = async (req, res) => {
 
     const [handholdingActivities, documents] = await Promise.all([
       Activity.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['activityDate', 'DESC']],
       }),
       BeneficiaryDocument.findAll({
-        where: { beneficiary_id: req.params.id },
+        where: { beneficiary: req.params.id },
         order: [['createdAt', 'DESC']],
       }),
     ]);
@@ -689,4 +740,73 @@ export const deleteDocument = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+};
+
+// @desc    Import beneficiaries from parsed Excel rows (upsert by ID / mobile / Aadhaar)
+// @route   POST /api/beneficiary/import
+// @access  Private/Admin
+export const importBeneficiaries = async (req, res) => {
+  const { rows } = req.body;
+
+  if (!rows || !Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ success: false, message: 'No import rows provided.' });
+  }
+
+  const results = { batchesCreated: 0, createdBatchNumbers: [], created: 0, updated: 0, failed: 0, errors: [] };
+
+  try {
+    const batchResult = await ensureEsdpBatchesFromImportRows(rows);
+    results.batchesCreated = batchResult.createdCount;
+    results.createdBatchNumbers = batchResult.createdBatchNumbers;
+
+    for (let i = 0; i < rows.length; i += 1) {
+      const rowNumber = i + 2; // account for header row in Excel
+      try {
+        const mapped = mapImportRow(rows[i]);
+        const { action } = await upsertBeneficiaryFromImport(mapped);
+        if (action === 'created') results.created += 1;
+        else results.updated += 1;
+      } catch (rowErr) {
+        results.failed += 1;
+        results.errors.push({ row: rowNumber, message: rowErr.message });
+      }
+    }
+
+    await logAudit({
+      req,
+      action: 'IMPORT_BENEFICIARIES',
+      entity: 'Beneficiary',
+      details: {
+        totalRows: rows.length,
+        batchesCreated: results.batchesCreated,
+        created: results.created,
+        updated: results.updated,
+        failed: results.failed,
+      },
+    });
+
+    const batchMsg = results.batchesCreated > 0
+      ? ` ${results.batchesCreated} new ESDP batch(es) created.`
+      : '';
+
+    res.json({
+      success: true,
+      message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed.${batchMsg}`,
+      results,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc    Get Excel import template column headers
+// @route   GET /api/beneficiary/import/template
+// @access  Private/Admin
+export const getImportTemplate = async (req, res) => {
+  res.json({
+    success: true,
+    headers: IMPORT_TEMPLATE_HEADERS,
+    matchKeys: ['Beneficiary ID', 'Mobile Number', 'Aadhaar Number'],
+    requiredColumns: ['Full Name', 'Mobile Number', 'SHG Name'],
+  });
 };

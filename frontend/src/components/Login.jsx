@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Smartphone, Mail, Lock, Shield, KeyRound, AlertCircle, UserPlus, UserCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
+import DashboardModal from './common/DashboardModal';
 
 export default function Login() {
   const { login, API_BASE, masterData } = useApp();
@@ -388,12 +389,9 @@ export default function Login() {
 
       {/* Simulated OTP Password Reset Modal */}
       {showResetModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-2xl p-6 relative">
-            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-teal-400" /> OTP Password Reset
-            </h3>
-            <p className="text-slate-400 text-xs mb-4">
+        <DashboardModal title="OTP Password Reset" onClose={() => setShowResetModal(false)}>
+          <div className="mx-auto max-w-md p-2 sm:p-6">
+            <p className="text-slate-400 text-xs mb-4 text-center">
               Counsellors can reset their passwords using mobile OTP verification.
             </p>
 
@@ -480,7 +478,7 @@ export default function Login() {
               </form>
             )}
           </div>
-        </div>
+        </DashboardModal>
       )}
     </div>
   );

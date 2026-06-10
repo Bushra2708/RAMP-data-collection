@@ -7,11 +7,16 @@ import {
   addActivity,
   uploadDocument,
   deleteDocument,
+  importBeneficiaries,
+  getImportTemplate,
 } from '../controllers/beneficiaryController.js';
 import { protect, adminOnly } from '../middleware/auth.js';
 import upload from '../middleware/upload.js';
 
 const router = express.Router();
+
+router.get('/import/template', protect, adminOnly, getImportTemplate);
+router.post('/import', protect, adminOnly, importBeneficiaries);
 
 router.route('/')
   .post(protect, registerBeneficiary)
